@@ -1,0 +1,53 @@
+services:
+  postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: inventory
+    ports:
+      # Host 5544 -> container 5432 on purpose: a separate company Postgres already
+      # owns host 5432 on this dev machine, so 5544 avoids the local clash. This is a
+      # LOCAL-DEV workaround only. On deploy, revert to the plain 5432 default (see
+      # PROGRESS.md "Environment / config notes"). Container-internal port stays 5432,
+      # so the api service below still connects on Port=5432.
+      - "5544:5432"
+    volumes:
+      - inventory-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./server/Inventory.Api
+      dockerfile: Dockerfile
+    environment:
+      ASPNETCORE_ENVIRONMENT: Development
+      ConnectionStrings__Default: "Host=postgres;Port=5432;Database=inventory;Username=postgres;Password=postgres"
+      # Let the containerised SPA (served by nginx on host 5173) call the API in a full local stack run.
+      Cors__AllowedOrigins__0: "http://localhost:5173"
+    ports:
+      - "8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Optional: the React client served by nginx (static build + /api reverse proxy). Run the full stack with
+  # `docker compose up`; the SPA is then at http://localhost:5173 and proxies /api to the api service.
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    environment:
+      API_UPSTREAM: "http://api:8080"
+      PORT: "80"
+    ports:
+      - "5173:80"
+    depends_on:
+      - api
+
+volumes:
+  inventory-postgres-data:
