@@ -8,14 +8,13 @@ namespace Inventory.Api.Application.Auth;
 
 /// <summary>
 /// Mints the locally-signed (HS256) JWT bearer for the guest/demo login. This produces the <em>same</em> shape of
-/// bearer the real Entra SSO flow yields, so the rest of the app treats both identically (design §2 A7). Used only
-/// on the flag-gated <c>POST /api/auth/dev-login</c> path — never in real production, where SSO is the only path.
+/// bearer the real Entra SSO flow yields, so the rest of the app treats both identically (design §2 A7).
 /// </summary>
-public class DevTokenIssuer
+public class GuestTokenIssuer
 {
     private readonly JwtOptions _jwt;
 
-    public DevTokenIssuer(IOptions<JwtOptions> jwt)
+    public GuestTokenIssuer(IOptions<JwtOptions> jwt)
     {
         _jwt = jwt.Value;
     }

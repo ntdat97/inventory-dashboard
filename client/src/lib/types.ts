@@ -10,6 +10,11 @@ export const VEHICLE_STATUSES: VehicleStatus[] = [
   "AtAuction",
 ];
 
+export type VehicleScope = "Active" | "Closed" | "All";
+export const VEHICLE_SCOPES: VehicleScope[] = ["Active", "Closed", "All"];
+export const ACTIVE_VEHICLE_STATUSES: VehicleStatus[] = ["InStock", "Reserved"];
+export const CLOSED_VEHICLE_STATUSES: VehicleStatus[] = ["Sold", "Transferred", "AtAuction"];
+
 export type AgingTier = "Fresh" | "Watch" | "Aging" | "Critical";
 export const AGING_TIERS: AgingTier[] = ["Fresh", "Watch", "Aging", "Critical"];
 
@@ -50,6 +55,7 @@ export interface VehicleListItem {
   acquisitionCost: number;
   listPrice: number;
   status: VehicleStatus;
+  closedDate: string | null;
   daysInInventory: number;
   tier: AgingTier;
   daysUntilAging: number | null;
@@ -91,6 +97,7 @@ export interface Recommendation {
   rationale: string;
   source: RecommendationSource;
   groundingFacts: string[];
+  marketRead: string | null;
 }
 
 export interface PagedResult<T> {
@@ -109,7 +116,7 @@ export interface UserProfile {
   dealershipId: string | null;
 }
 
-export interface DevLoginResponse {
+export interface GuestLoginResponse {
   accessToken: string;
   tokenType: string;
   expiresAtUtc: string;
@@ -118,10 +125,12 @@ export interface DevLoginResponse {
 
 export interface VehicleQuery {
   dealershipId?: string;
+  search?: string;
   make?: string;
   model?: string;
-  tier?: AgingTier;
-  status?: VehicleStatus;
+  scope?: VehicleScope;
+  tier?: AgingTier[];
+  status?: VehicleStatus[];
   minDays?: number;
   maxDays?: number;
   sort?: string;

@@ -52,16 +52,12 @@ public class AzureAdOptions
 }
 
 /// <summary>
-/// The guest/demo login control point. When <see cref="Enabled"/> is true, <c>POST /api/auth/dev-login</c> mints a
-/// bearer for the configured demo profile — no IdP or secrets needed to run. Explicit and off-by-default: turned on
-/// deliberately for the public demo, left off in real production where SSO is the only path (design §2 A7).
+/// Guest/demo login profile. The demo path is intentionally always available for this reviewer deployment; real Entra
+/// SSO remains present as the production-style path, but reviewers are not expected to have a tenant account.
 /// </summary>
 public class DemoAuthOptions
 {
     public const string SectionName = "DemoAuth";
-
-    /// <summary>Master switch for the guest login. Default false; not tied to build environment (deliberate — the flag is the control).</summary>
-    public bool Enabled { get; set; } = false;
 
     /// <summary>Demo user's email (becomes the token's <c>email</c> / <c>preferred_username</c> claim).</summary>
     public string Email { get; set; } = "demo.manager@datnguyen-demo.com";

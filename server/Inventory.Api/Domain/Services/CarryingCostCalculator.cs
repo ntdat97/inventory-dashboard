@@ -22,9 +22,14 @@ public class CarryingCostCalculator
         return dailyInterest + dailyDepreciation + _config.FixedDailyHolding;
     }
 
-    public decimal CalculateToDate(decimal acquisitionCost, DateTime acquisitionDateUtc)
+    /// <summary>
+    /// Carrying cost accrued from acquisition up to <paramref name="asOfUtc"/> (a closed vehicle's <c>ClosedDate</c>),
+    /// or up to the current clock when null (still held). Freezing the anchor stops a sold unit's cost from growing forever.
+    /// </summary>
+    public decimal CalculateToDate(decimal acquisitionCost, DateTime acquisitionDateUtc, DateTime? asOfUtc = null)
     {
-        var daysInInventory = Math.Max(0, (int)(_clock.UtcNow.Date - acquisitionDateUtc.Date).TotalDays);
+        var asOf = (asOfUtc ?? _clock.UtcNow).Date;
+        var daysInInventory = Math.Max(0, (int)(asOf - acquisitionDateUtc.Date).TotalDays);
         return daysInInventory * CalculateDailyCost(acquisitionCost);
     }
 }

@@ -15,12 +15,13 @@ public class InventorySummaryTests : IClassFixture<InventoryApiFactory>
         _client = factory.CreateClient();
     }
 
-    // The seed (days-in-inventory anchored to the fixed test clock, all InStock).
+    // Active seed only: summary KPIs describe capital currently at risk (InStock + Reserved).
     private static readonly (int Days, decimal Cost, decimal ListPrice)[] Seed =
     [
-        (5, 24000m, 27500m), (18, 21000m, 24000m), (30, 26000m, 29500m), (38, 38000m, 43000m),
-        (52, 25000m, 28500m), (60, 27000m, 30500m), (66, 24500m, 27800m), (80, 19500m, 22800m),
-        (90, 23000m, 26200m), (95, 18500m, 21600m), (130, 31000m, 34500m), (210, 29000m, 33200m),
+        (3, 24000m, 27500m), (7, 39000m, 44500m), (18, 47000m, 53500m),
+        (24, 27000m, 30500m), (30, 26000m, 29500m), (38, 38000m, 43000m),
+        (60, 27000m, 30500m), (66, 24500m, 27800m), (80, 19500m, 22800m),
+        (85, 46000m, 51900m), (90, 23000m, 26200m), (128, 34000m, 38200m),
     ];
 
     [Fact]
@@ -29,16 +30,16 @@ public class InventorySummaryTests : IClassFixture<InventoryApiFactory>
         var summary = await _client.GetFromJsonAsync<InventorySummaryDto>("/api/inventory/summary", JsonDefaults.Options);
 
         summary!.TotalUnits.Should().Be(12);
-        summary.TotalInventoryValue.Should().Be(349100m);      // sum of list prices
-        summary.AgedUnits.Should().Be(3);                       // Critical: days 95/130/210
-        summary.AgedPercent.Should().Be(25.00m);               // 3 / 12
-        summary.CapitalTiedInAged.Should().Be(78500m);         // cost basis of the 3 critical units
-        summary.AvgDaysInInventory.Should().Be(72.83m);        // mean of the day offsets, 2dp
+        summary.TotalInventoryValue.Should().Be(425900m);      // sum of active list prices
+        summary.AgedUnits.Should().Be(1);                      // Critical: day 128
+        summary.AgedPercent.Should().Be(8.33m);                // 1 / 12
+        summary.CapitalTiedInAged.Should().Be(34000m);         // cost basis of the critical active unit
+        summary.AvgDaysInInventory.Should().Be(52.42m);        // mean of the active day offsets, 2dp
 
-        summary.TierBreakdown[AgingTier.Fresh].Should().Be(3);
-        summary.TierBreakdown[AgingTier.Watch].Should().Be(3);
-        summary.TierBreakdown[AgingTier.Aging].Should().Be(3);
-        summary.TierBreakdown[AgingTier.Critical].Should().Be(3);
+        summary.TierBreakdown[AgingTier.Fresh].Should().Be(5);
+        summary.TierBreakdown[AgingTier.Watch].Should().Be(2);
+        summary.TierBreakdown[AgingTier.Aging].Should().Be(4);
+        summary.TierBreakdown[AgingTier.Critical].Should().Be(1);
     }
 
     [Fact]

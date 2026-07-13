@@ -36,7 +36,11 @@ public class RecommendationEndpointTests
     [Fact]
     public async Task Recommendation_WhenAiSucceeds_IsEnriched()
     {
-        var fake = new FakeAiClient(response: new AiRecommendation(ActionType.Promote, null, "AI-enriched rationale."));
+        var fake = new FakeAiClient(response: new AiRecommendation(
+            ActionType.Promote,
+            null,
+            "AI-enriched rationale.",
+            "Market read: this model should be merchandised as practical family inventory."));
         using var factory = new InventoryApiFactory(fake);
         var client = factory.CreateClient();
         var vehicleId = await CriticalVehicleId(client);
@@ -46,6 +50,11 @@ public class RecommendationEndpointTests
 
         dto!.Source.Should().Be(RecommendationSource.Ai);
         dto.Rationale.Should().Be("AI-enriched rationale.");
+        dto.MarketRead.Should().Contain("practical family inventory");
+        fake.LastContext.Should().NotBeNull();
+        fake.LastContext!.Make.Should().NotBeNullOrWhiteSpace();
+        fake.LastContext.Model.Should().NotBeNullOrWhiteSpace();
+        fake.LastContext.Year.Should().BeGreaterThan(0);
     }
 
     [Fact]

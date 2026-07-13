@@ -2,32 +2,42 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Instrument Console token system.
+ * The dashboard reads like a calibrated gauge cluster: gunmetal ink on concrete paper, one blueprint-indigo accent
+ * reserved for structure/chrome (never risk), and the fixed Fresh→Critical aging spectrum as the only data-color
+ * language. Numbers are always mono + tabular so figures line up like a readout. HSL values mirror the v1 mockup.
+ */
 @layer base {
   :root {
-    --background: 210 40% 98%;
-    --foreground: 222 47% 11%;
-    --card: 0 0% 100%;
-    --card-foreground: 222 47% 11%;
-    --primary: 222 47% 11%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 222 47% 11%;
-    --muted: 210 40% 96%;
-    --muted-foreground: 215 16% 47%;
-    --accent: 210 40% 94%;
-    --accent-foreground: 222 47% 11%;
-    --destructive: 0 72% 51%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214 32% 91%;
-    --input: 214 32% 91%;
-    --ring: 222 47% 11%;
-    --radius: 0.6rem;
+    --background: 80 12% 95%; /* paper — concrete */
+    --foreground: 170 23% 10%; /* ink — gunmetal */
+    --card: 0 0% 100%; /* surface */
+    --card-foreground: 170 23% 10%;
+    --primary: 219 55% 35%; /* accent — blueprint indigo (chrome/structure only) */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 80 12% 95%;
+    --secondary-foreground: 170 23% 10%;
+    --muted: 120 11% 98%; /* faint surface for zebra/fills */
+    --muted-foreground: 144 5% 38%; /* muted ink */
+    --accent: 219 55% 35%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 358 75% 59%; /* critical red */
+    --destructive-foreground: 0 0% 100%;
+    --border: 105 7% 89%;
+    --input: 105 7% 89%;
+    --ring: 219 55% 35%;
+    --radius: 0.5rem;
 
-    /* Aging tiers — a deliberate green→amber→orange→red progression (design A3). */
-    --tier-fresh: 152 62% 40%;
-    --tier-watch: 45 93% 47%;
-    --tier-aging: 27 96% 52%;
-    --tier-critical: 0 74% 52%;
+    /* Aging spectrum — the app's fixed data language (green→amber→orange→red). Never repurposed for chrome. */
+    --tier-fresh: 156 69% 39%;
+    --tier-watch: 43 95% 44%;
+    --tier-aging: 29 88% 53%;
+    --tier-critical: 358 75% 59%;
+
+    --font-display: "Archivo", ui-sans-serif, system-ui, sans-serif;
+    --font-body: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
   }
 }
 
@@ -37,6 +47,197 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-family: var(--font-body);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
     font-feature-settings: "rlig" 1, "calt" 1;
+  }
+  h1, h2, h3, .font-display {
+    font-family: var(--font-display);
+  }
+}
+
+@layer components {
+  /* Tabular mono numerals — the readout treatment for every figure. */
+  .mono {
+    font-family: var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+
+  /*
+   * Ledger row entrance. When the underlying result set changes (filter / sort / page / tier),
+   * the tbody is remounted under a fresh key and rows fade+rise in a short staggered cascade —
+   * a calm "the table just updated" signal, not a bounce. Reduced-motion users get an instant paint.
+   */
+  .row-enter {
+    animation: row-enter 0.42s cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  @keyframes row-enter {
+    from {
+      opacity: 0;
+      transform: translateY(6px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  /*
+   * Soft flash on the whole ledger surface when a filter/tier selection re-scopes it — a one-shot
+   * ring pulse that draws the eye down to the table without a loud color change.
+   */
+  .surface-pulse {
+    animation: surface-pulse 0.6s ease-out;
+  }
+  @keyframes surface-pulse {
+    0% {
+      box-shadow: 0 0 0 0 hsl(var(--primary) / 0.35);
+    }
+    100% {
+      box-shadow: 0 0 0 5px hsl(var(--primary) / 0);
+    }
+  }
+
+  /*
+   * Field flash. When "Use this recommendation" prefills the action draft, the proposed-value input is
+   * remounted under a fresh key and pulses once — a ring + faint indigo tint that fades out — so the eye
+   * catches that the number just changed. Same one-shot vocabulary as .surface-pulse, scoped to one field.
+   */
+  .field-flash {
+    animation: field-flash 0.75s ease-out;
+  }
+  @keyframes field-flash {
+    0% {
+      box-shadow: 0 0 0 0 hsl(var(--primary) / 0.45);
+      background-color: hsl(var(--primary) / 0.08);
+    }
+    100% {
+      box-shadow: 0 0 0 4px hsl(var(--primary) / 0);
+      background-color: transparent;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .row-enter,
+    .surface-pulse,
+    .field-flash {
+      animation: none;
+    }
+  }
+
+  /*
+   * Detail sheet motion. Radix Dialog toggles data-state=open/closed on the overlay + content; we hang
+   * a short fade on the overlay and a slide-from-right on the panel off those states, so clicking a
+   * vehicle glides the inspection panel in (and back out) instead of popping. tailwindcss-animate isn't
+   * installed, so these are hand-rolled keyframes.
+   */
+  .sheet-overlay[data-state="open"] {
+    animation: sheet-fade-in 0.25s ease-out;
+  }
+  .sheet-overlay[data-state="closed"] {
+    animation: sheet-fade-out 0.2s ease-in;
+  }
+  .sheet-content[data-state="open"] {
+    animation: sheet-slide-in 0.34s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .sheet-content[data-state="closed"] {
+    animation: sheet-slide-out 0.24s cubic-bezier(0.4, 0, 1, 1);
+  }
+  @keyframes sheet-fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes sheet-fade-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+  @keyframes sheet-slide-in {
+    from {
+      transform: translateX(100%);
+    }
+    to {
+      transform: translateX(0);
+    }
+  }
+  @keyframes sheet-slide-out {
+    from {
+      transform: translateX(0);
+    }
+    to {
+      transform: translateX(100%);
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .sheet-overlay[data-state],
+    .sheet-content[data-state] {
+      animation: none;
+    }
+  }
+
+  /*
+   * AI recommendation reveal. The content arrives after the LLM/baseline response, so it needs a quiet
+   * fade+rise handoff from skeleton to answer instead of popping into the detail sheet. Keep it subtle:
+   * AI supports the action workflow; it should feel responsive, not theatrical.
+   */
+  .ai-reveal-panel {
+    animation: ai-reveal-panel 0.48s cubic-bezier(0.22, 1, 0.36, 1) both;
+    transform-origin: top center;
+  }
+  .ai-reveal-badge {
+    animation: ai-reveal-badge 0.36s ease-out both;
+  }
+  @keyframes ai-reveal-panel {
+    from {
+      opacity: 0;
+      transform: translateY(8px) scale(0.985);
+      filter: blur(2px);
+    }
+    65% {
+      filter: blur(0);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0) scale(1);
+      filter: blur(0);
+    }
+  }
+  @keyframes ai-reveal-badge {
+    from {
+      opacity: 0;
+      transform: translateY(-3px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .ai-reveal-panel,
+    .ai-reveal-badge {
+      animation: none;
+    }
+  }
+
+  /* Section eyebrow: mono index + hairline rule, the "instrument label" that scaffolds each block. */
+  .eyebrow {
+    @apply flex items-center gap-2.5 text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground;
+    font-family: var(--font-mono);
+  }
+  .eyebrow::before {
+    content: "";
+    @apply h-px w-[18px] bg-primary;
+  }
+  .eyebrow .idx {
+    @apply text-primary;
   }
 }

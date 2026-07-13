@@ -1,7 +1,7 @@
 namespace Inventory.Api.Application.Dtos;
 
 /// <summary>Response for the guest/demo login: the minted bearer, its expiry, and the demo user's basic profile.</summary>
-public record DevLoginResponse(
+public record GuestLoginResponse(
     string AccessToken,
     string TokenType,
     DateTime ExpiresAtUtc,

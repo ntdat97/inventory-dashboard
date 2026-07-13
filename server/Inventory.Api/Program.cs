@@ -84,6 +84,7 @@ try
     // Application services (read path, action lifecycle, recommendation).
     builder.Services.AddScoped<InventoryService>();
     builder.Services.AddScoped<ActionService>();
+    builder.Services.AddScoped<VehicleReservationService>();
     builder.Services.AddScoped<RecommendationService>();
 
     // Request validation.

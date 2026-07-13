@@ -33,6 +33,7 @@ public class AppDbContext : DbContext
             entity.Property(v => v.Model).IsRequired().HasMaxLength(100);
             entity.Property(v => v.AcquisitionCost).HasPrecision(18, 2);
             entity.Property(v => v.ListPrice).HasPrecision(18, 2);
+            entity.HasIndex(v => v.Status);
 
             entity.HasOne(v => v.Dealership)
                 .WithMany(d => d.Vehicles)

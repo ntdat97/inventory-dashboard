@@ -74,4 +74,28 @@ public class AgingCalculatorTests
         calculator.Calculate(Now.AddDays(-11)).Tier.Should().Be(AgingTier.Watch);
         calculator.Calculate(Now.AddDays(-31)).Tier.Should().Be(AgingTier.Critical);
     }
+
+    [Fact]
+    public void Calculate_WithAsOf_FreezesDaysAtThatDate_NotTheClock()
+    {
+        var calculator = CreateCalculator();
+        var acquisition = Now.AddDays(-100);
+        var closed = Now.AddDays(-40); // left inventory 40 days ago after 60 days in stock
+
+        var result = calculator.Calculate(acquisition, closed);
+
+        // Frozen at 60 days (closed - acquisition), NOT 100 (now - acquisition).
+        result.DaysInInventory.Should().Be(60);
+        result.Tier.Should().Be(AgingTier.Watch);
+    }
+
+    [Fact]
+    public void Calculate_WithNullAsOf_MatchesTheClock()
+    {
+        var calculator = CreateCalculator();
+        var acquisition = Now.AddDays(-100);
+
+        calculator.Calculate(acquisition, null).DaysInInventory
+            .Should().Be(calculator.Calculate(acquisition).DaysInInventory);
+    }
 }

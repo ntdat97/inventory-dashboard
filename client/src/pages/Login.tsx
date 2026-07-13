@@ -1,12 +1,12 @@
 import { useState } from "react";
-import { Loader2, LogIn } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { BrandMark } from "@/components/BrandMark";
 import { useAuth } from "@/auth/AuthContext";
 import { ApiError } from "@/lib/api";
 
-/** Full-screen sign-in. Two paths mirror the backend: real Entra SSO (Microsoft) and the flag-gated guest demo. */
-export function LoginScreen() {
+/** The /login page — full-screen sign-in. Two paths mirror the backend: real Entra SSO and the flag-gated guest demo. */
+export function Login() {
   const { loginAsGuest, loginWithMicrosoft } = useAuth();
   const [busy, setBusy] = useState<"guest" | "microsoft" | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -27,20 +27,26 @@ export function LoginScreen() {
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
-        <CardHeader className="space-y-2 text-center">
-          <div className="mx-auto flex h-11 w-11 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <LogIn className="h-5 w-5" />
-          </div>
-          <CardTitle className="text-xl">Intelligent Inventory Dashboard</CardTitle>
-          <CardDescription>
-            Capital-at-risk decision support for dealership inventory. Sign in to continue.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
+      <div className="relative w-full max-w-[420px] overflow-hidden rounded-[10px] border bg-card p-9 text-center shadow-[0_8px_30px_rgba(20,32,30,0.05)]">
+        {/* Spectrum ribbon crowning the card — the same data language as the dashboard */}
+        <span
+          className="absolute inset-x-0 top-0 h-1"
+          style={{
+            background:
+              "linear-gradient(90deg, hsl(var(--tier-fresh)) 0 25%, hsl(var(--tier-watch)) 25% 50%, hsl(var(--tier-aging)) 50% 75%, hsl(var(--tier-critical)) 75% 100%)",
+          }}
+        />
+        <BrandMark className="mx-auto mb-5 mt-1.5 h-11 w-11" />
+        <h1 className="font-display text-[22px] font-extrabold tracking-[-0.02em]">
+          Inventory Dashboard
+        </h1>
+        <p className="mx-auto mb-6 mt-2 max-w-[300px] text-[13px] leading-relaxed text-muted-foreground">
+          See exactly where capital is stuck across your lot — and act before it bleeds.
+        </p>
+
+        <div className="space-y-2.5 text-left">
           <Button
-            className="w-full"
-            variant="outline"
+            className="w-full bg-foreground text-background hover:bg-foreground/90"
             disabled={busy !== null}
             onClick={() => run("microsoft", loginWithMicrosoft)}
           >
@@ -53,6 +59,7 @@ export function LoginScreen() {
           </Button>
           <Button
             className="w-full"
+            variant="outline"
             disabled={busy !== null}
             onClick={() => run("guest", loginAsGuest)}
           >
@@ -61,7 +68,10 @@ export function LoginScreen() {
           </Button>
 
           {error ? (
-            <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive" role="alert">
+            <p
+              className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive"
+              role="alert"
+            >
               {error}
             </p>
           ) : null}
@@ -70,8 +80,8 @@ export function LoginScreen() {
             The guest path mints the same bearer as real SSO, so reviewers can explore with seeded,
             non-sensitive data — no tenant required.
           </p>
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </div>
   );
 }

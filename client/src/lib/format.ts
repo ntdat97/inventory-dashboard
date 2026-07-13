@@ -51,39 +51,23 @@ export function humanizeEnum(value: string): string {
 
 interface TierStyle {
   label: string;
-  /** Tailwind classes for a filled badge. */
-  badge: string;
-  /** The CSS var-backed fill used by the Recharts spectrum. */
+  /** The tier's canonical hex-var fill, used by swatches and the Recharts spectrum. */
   fill: string;
+  /** Tailwind text-color utility for the tier hue. */
+  text: string;
 }
 
 export const TIER_STYLES: Record<AgingTier, TierStyle> = {
-  Fresh: {
-    label: "Fresh",
-    badge: "bg-tier-fresh/15 text-tier-fresh border-tier-fresh/30",
-    fill: "hsl(var(--tier-fresh))",
-  },
-  Watch: {
-    label: "Watch",
-    badge: "bg-tier-watch/15 text-tier-watch border-tier-watch/30",
-    fill: "hsl(var(--tier-watch))",
-  },
-  Aging: {
-    label: "Aging",
-    badge: "bg-tier-aging/15 text-tier-aging border-tier-aging/30",
-    fill: "hsl(var(--tier-aging))",
-  },
-  Critical: {
-    label: "Critical",
-    badge: "bg-tier-critical/15 text-tier-critical border-tier-critical/30",
-    fill: "hsl(var(--tier-critical))",
-  },
+  Fresh: { label: "Fresh", fill: "hsl(var(--tier-fresh))", text: "text-tier-fresh" },
+  Watch: { label: "Watch", fill: "hsl(var(--tier-watch))", text: "text-tier-watch" },
+  Aging: { label: "Aging", fill: "hsl(var(--tier-aging))", text: "text-tier-aging" },
+  Critical: { label: "Critical", fill: "hsl(var(--tier-critical))", text: "text-tier-critical" },
 };
 
-/** Lifecycle status → badge classes; a subtle progression from proposed (neutral) to resolved (green). */
+/** Lifecycle status → mono-pill classes. A subtle progression proposed (indigo) → resolved (green). */
 export const ACTION_STATUS_STYLES: Record<ActionStatus, string> = {
-  Proposed: "bg-muted text-muted-foreground border-border",
-  Approved: "bg-tier-watch/15 text-tier-watch border-tier-watch/30",
-  InProgress: "bg-tier-aging/15 text-tier-aging border-tier-aging/30",
-  Resolved: "bg-tier-fresh/15 text-tier-fresh border-tier-fresh/30",
+  Proposed: "text-primary border-primary/35 bg-primary/[0.05]",
+  Approved: "text-tier-fresh border-tier-fresh/40 bg-tier-fresh/[0.06]",
+  InProgress: "text-tier-aging border-tier-aging/40 bg-tier-aging/[0.06]",
+  Resolved: "text-tier-fresh border-tier-fresh/40 bg-tier-fresh/[0.06]",
 };

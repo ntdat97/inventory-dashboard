@@ -60,8 +60,55 @@ public class BaselineRecommender
 
     private static List<string> BuildFacts(RecommendationContext context) =>
     [
-        $"In stock {context.DaysInInventory} days ({context.Tier}).",
-        $"List price {context.ListPrice:C0} vs cost basis {context.AcquisitionCost:C0} (margin {context.MarginRatio:P0}).",
-        $"Carrying cost to date {context.CarryingCostToDate:C0}.",
+        BuildAgeFact(context),
+        BuildMarginFact(context),
+        BuildCarryingCostFact(context),
     ];
+
+    private static string BuildAgeFact(RecommendationContext context)
+    {
+        if (context.AverageActiveDaysInInventory is { } averageDays && averageDays > 0)
+        {
+            var delta = context.DaysInInventory - averageDays;
+            var comparison = Math.Abs(delta) < 1m
+                ? "in line with the active fleet average"
+                : delta > 0
+                    ? $"about {Math.Round(delta)} days older than the active fleet average"
+                    : $"about {Math.Round(Math.Abs(delta))} days younger than the active fleet average";
+
+            return $"{context.DaysInInventory} days in stock ({context.Tier}); {comparison}.";
+        }
+
+        return $"{context.DaysInInventory} days in stock ({context.Tier}).";
+    }
+
+    private static string BuildMarginFact(RecommendationContext context)
+    {
+        var marginSignal = context.MarginRatio switch
+        {
+            <= 0m => "underwater at current list price",
+            <= ThinMarginThreshold => "thin room for discounting",
+            <= 0.15m => "some discount room, but margin needs protection",
+            _ => "healthy room to discount before cost basis",
+        };
+
+        return $"{context.MarginRatio:P0} margin ({context.MarginDollars:C0} above cost); {marginSignal}.";
+    }
+
+    private static string BuildCarryingCostFact(RecommendationContext context)
+    {
+        var dailyDrag = context.DailyCarryingCost;
+        var nextThirtyDays = dailyDrag * 30m;
+
+        if (context.AverageActiveCarryingCostToDate is { } averageCost && averageCost > 0)
+        {
+            var comparison = context.CarryingCostToDate >= averageCost
+                ? $"above the active fleet average of {averageCost:C0}"
+                : $"below the active fleet average of {averageCost:C0}";
+
+            return $"{context.CarryingCostToDate:C0} carrying cost, {comparison}; next 30 days adds about {nextThirtyDays:C0}.";
+        }
+
+        return $"{context.CarryingCostToDate:C0} carrying cost to date; next 30 days adds about {nextThirtyDays:C0}.";
+    }
 }

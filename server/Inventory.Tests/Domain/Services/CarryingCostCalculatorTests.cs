@@ -52,6 +52,21 @@ public class CarryingCostCalculatorTests
     }
 
     [Fact]
+    public void CalculateToDate_WithAsOf_FreezesAccrualAtThatDate()
+    {
+        var calculator = CreateCalculator();
+        const decimal acquisitionCost = 24000m;
+        var acquisition = Now.AddDays(-100);
+        var closed = Now.AddDays(-40); // 60 held-days, then left the lot
+
+        var frozen = calculator.CalculateToDate(acquisitionCost, acquisition, closed);
+
+        // Accrues over 60 days (acquisition -> closed), not 100 (acquisition -> now).
+        frozen.Should().Be(60 * calculator.CalculateDailyCost(acquisitionCost));
+        frozen.Should().BeLessThan(calculator.CalculateToDate(acquisitionCost, acquisition));
+    }
+
+    [Fact]
     public void CalculateToDate_UsesConfigVariant_HigherInterestAndDepreciation()
     {
         var config = new CarryingCostConfig

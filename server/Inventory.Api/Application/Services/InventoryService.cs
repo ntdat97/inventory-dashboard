@@ -52,7 +52,7 @@ public class InventoryService
 
         var items = vehicles
             .Select(ToListItem)
-            .Where(v => query.Tier is null || v.Tier == query.Tier)
+            .Where(v => query.Tier.Count == 0 || query.Tier.Contains(v.Tier))
             .Where(v => query.MinDays is null || v.DaysInInventory >= query.MinDays)
             .Where(v => query.MaxDays is null || v.DaysInInventory <= query.MaxDays)
             .ToList();
@@ -77,19 +77,7 @@ public class InventoryService
             return null;
         }
 
-        var aging = _aging.Calculate(vehicle.AcquisitionDate);
-        var carryingCost = _carryingCost.CalculateToDate(vehicle.AcquisitionCost, vehicle.AcquisitionDate);
-
-        var history = vehicle.Actions
-            .OrderByDescending(a => a.CreatedAt)
-            .Select(DtoMapper.ToActionDto)
-            .ToList();
-
-        return new VehicleDetailDto(
-            vehicle.Id, vehicle.Vin, vehicle.DealershipId, vehicle.Dealership?.Name,
-            vehicle.Make, vehicle.Model, vehicle.Year, vehicle.Trim, vehicle.Color, vehicle.Mileage,
-            vehicle.AcquisitionDate, vehicle.AcquisitionCost, vehicle.ListPrice, vehicle.Status,
-            aging.DaysInInventory, aging.Tier, aging.DaysUntilAging, carryingCost, history);
+        return DtoMapper.ToVehicleDetailDto(vehicle, _aging, _carryingCost);
     }
 
     public async Task<InventorySummaryDto> GetSummaryAsync(Guid? dealershipId, CancellationToken ct = default)
@@ -100,8 +88,8 @@ public class InventoryService
             query = query.Where(v => v.DealershipId == dealershipId);
         }
 
-        // KPIs describe capital currently held; sold/transferred units have left inventory.
-        query = query.Where(v => v.Status == VehicleStatus.InStock || v.Status == VehicleStatus.Reserved);
+        // KPIs describe capital currently held; sold/transferred/auction units have left the active risk ledger.
+        query = ApplyScope(query, VehicleScope.Active);
 
         var vehicles = await query.ToListAsync(ct);
         var items = vehicles.Select(ToListItem).ToList();
@@ -135,7 +123,7 @@ public class InventoryService
             query = query.Where(v => v.DealershipId == dealershipId);
         }
 
-        var vehicles = await query.ToListAsync(ct);
+        var vehicles = await ApplyScope(query, VehicleScope.Active).ToListAsync(ct);
 
         return vehicles
             .Select(ToListItem)
@@ -153,6 +141,21 @@ public class InventoryService
             q = q.Where(v => v.DealershipId == query.DealershipId);
         }
 
+        if (!string.IsNullOrWhiteSpace(query.Search))
+        {
+            // Single free-text box: case-insensitive substring across the row's identifying columns.
+            // ToLower().Contains (not Postgres ILike) keeps the query provider-agnostic — the design's
+            // "swap the DB provider in one line" claim only holds if we don't reach for pg-specific SQL.
+            var term = query.Search.Trim().ToLower();
+            q = q.Where(v =>
+                v.Make.ToLower().Contains(term)
+                || v.Model.ToLower().Contains(term)
+                || (v.Trim != null && v.Trim.ToLower().Contains(term))
+                || (v.Color != null && v.Color.ToLower().Contains(term))
+                || v.Vin.ToLower().Contains(term)
+                || v.Year.ToString().Contains(term));
+        }
+
         if (!string.IsNullOrWhiteSpace(query.Make))
         {
             q = q.Where(v => v.Make == query.Make);
@@ -163,12 +166,25 @@ public class InventoryService
             q = q.Where(v => v.Model == query.Model);
         }
 
-        if (query.Status is not null)
+        if (query.Status.Count > 0)
         {
-            q = q.Where(v => v.Status == query.Status);
+            q = q.Where(v => query.Status.Contains(v.Status));
         }
 
-        return q;
+        return ApplyScope(q, query.Scope);
+    }
+
+    private static IQueryable<Vehicle> ApplyScope(IQueryable<Vehicle> q, VehicleScope scope)
+    {
+        // Active = still capital-at-risk (InStock/Reserved); Closed = left the ledger (Sold/Transferred/AtAuction).
+        // Kept as an inline predicate (not the VehicleStatusExtensions helper) so EF can translate it to SQL.
+        return scope switch
+        {
+            VehicleScope.Active => q.Where(v => v.Status == VehicleStatus.InStock || v.Status == VehicleStatus.Reserved),
+            VehicleScope.Closed => q.Where(v => v.Status != VehicleStatus.InStock && v.Status != VehicleStatus.Reserved),
+            VehicleScope.All => q,
+            _ => q.Where(v => v.Status == VehicleStatus.InStock || v.Status == VehicleStatus.Reserved),
+        };
     }
 
     private static IEnumerable<VehicleListItemDto> ApplySort(IEnumerable<VehicleListItemDto> items, string? sort)
@@ -200,14 +216,6 @@ public class InventoryService
         return descending ? items.OrderByDescending(selector) : items.OrderBy(selector);
     }
 
-    private VehicleListItemDto ToListItem(Vehicle v)
-    {
-        var aging = _aging.Calculate(v.AcquisitionDate);
-        var carryingCost = _carryingCost.CalculateToDate(v.AcquisitionCost, v.AcquisitionDate);
-
-        return new VehicleListItemDto(
-            v.Id, v.Vin, v.DealershipId, v.Make, v.Model, v.Year, v.Trim, v.Color, v.Mileage,
-            v.AcquisitionDate, v.AcquisitionCost, v.ListPrice, v.Status,
-            aging.DaysInInventory, aging.Tier, aging.DaysUntilAging, carryingCost);
-    }
+    private VehicleListItemDto ToListItem(Vehicle v) =>
+        DtoMapper.ToVehicleListItemDto(v, _aging, _carryingCost);
 }

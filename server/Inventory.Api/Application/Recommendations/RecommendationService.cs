@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using Inventory.Api.Application.Dtos;
+using Inventory.Api.Domain.Enums;
 using Inventory.Api.Domain.Services;
 using Inventory.Api.Infrastructure;
 using Inventory.Api.Infrastructure.Observability;
@@ -48,30 +49,76 @@ public class RecommendationService
         _logger = logger;
     }
 
-    public async Task<RecommendationDto?> GetForVehicleAsync(Guid vehicleId, CancellationToken ct = default)
+    public async Task<RecommendationResultOf> GetForVehicleAsync(Guid vehicleId, CancellationToken ct = default)
     {
         var cacheKey = CacheKey(vehicleId);
         if (_cache.TryGetValue(cacheKey, out RecommendationDto? cached) && cached is not null)
         {
-            return cached;
+            return RecommendationResultOf.Ok(cached);
         }
 
         var vehicle = await _db.Vehicles.AsNoTracking().FirstOrDefaultAsync(v => v.Id == vehicleId, ct);
         if (vehicle is null)
         {
-            return null;
+            return RecommendationResultOf.NotFound($"Vehicle {vehicleId} was not found.");
         }
 
-        var aging = _aging.Calculate(vehicle.AcquisitionDate);
-        var carryingCost = _carryingCost.CalculateToDate(vehicle.AcquisitionCost, vehicle.AcquisitionDate);
+        // No AI/baseline recommendation for a closed unit: it has left the risk ledger, so there's no action to take —
+        // and short-circuiting here means a sold vehicle never spends an LLM call (part of the public-demo cost guard).
+        if (vehicle.Status.IsClosed())
+        {
+            return RecommendationResultOf.Conflict(
+                $"Vehicle {vehicleId} is {vehicle.Status}; recommendations apply to active inventory only.");
+        }
+
+        var aging = _aging.Calculate(vehicle.AcquisitionDate, vehicle.ClosedDate);
+        var carryingCost = _carryingCost.CalculateToDate(vehicle.AcquisitionCost, vehicle.AcquisitionDate, vehicle.ClosedDate);
+        var benchmarks = await GetActiveFleetBenchmarksAsync(ct);
         var context = new RecommendationContext(
-            aging.DaysInInventory, aging.Tier, vehicle.ListPrice, vehicle.AcquisitionCost, carryingCost);
+            aging.DaysInInventory,
+            aging.Tier,
+            vehicle.ListPrice,
+            vehicle.AcquisitionCost,
+            carryingCost,
+            vehicle.Year,
+            vehicle.Make,
+            vehicle.Model,
+            vehicle.Trim,
+            vehicle.Mileage,
+            benchmarks.AverageDaysInInventory,
+            benchmarks.AverageCarryingCostToDate);
 
         var baseline = _baseline.Recommend(context);
         var dto = await EnrichOrBaselineAsync(vehicleId, context, baseline, ct);
 
         _cache.Set(cacheKey, dto, TimeSpan.FromMinutes(_options.CacheMinutes));
-        return dto;
+        return RecommendationResultOf.Ok(dto);
+    }
+
+    private async Task<FleetBenchmarks> GetActiveFleetBenchmarksAsync(CancellationToken ct)
+    {
+        var vehicles = await _db.Vehicles
+            .AsNoTracking()
+            .Where(v => v.Status == VehicleStatus.InStock || v.Status == VehicleStatus.Reserved)
+            .ToListAsync(ct);
+
+        if (vehicles.Count == 0)
+        {
+            return new FleetBenchmarks(null, null);
+        }
+
+        var signals = vehicles
+            .Select(v =>
+            {
+                var aging = _aging.Calculate(v.AcquisitionDate, v.ClosedDate);
+                var carryingCost = _carryingCost.CalculateToDate(v.AcquisitionCost, v.AcquisitionDate, v.ClosedDate);
+                return new { aging.DaysInInventory, CarryingCost = carryingCost };
+            })
+            .ToList();
+
+        return new FleetBenchmarks(
+            Math.Round((decimal)signals.Average(v => v.DaysInInventory), 0),
+            Math.Round(signals.Average(v => v.CarryingCost), 0));
     }
 
     private async Task<RecommendationDto> EnrichOrBaselineAsync(
@@ -88,7 +135,7 @@ public class RecommendationService
                 _metrics.RecordRecommendation("ai");
                 return new RecommendationDto(
                     vehicleId, enriched.Action, enriched.ProposedValue, enriched.Rationale,
-                    RecommendationSource.Ai, baseline.GroundingFacts);
+                    RecommendationSource.Ai, baseline.GroundingFacts, enriched.MarketRead);
             }
 
             if (enriched is not null)
@@ -110,4 +157,6 @@ public class RecommendationService
     }
 
     private static string CacheKey(Guid vehicleId) => $"recommendation:{vehicleId}";
+
+    private sealed record FleetBenchmarks(decimal? AverageDaysInInventory, decimal? AverageCarryingCostToDate);
 }

@@ -1,27 +1,30 @@
 import { useMemo, useState } from "react";
-import { KpiCards } from "@/components/KpiCards";
-import { AgingSpectrum } from "@/components/AgingSpectrum";
+import { RunwayRibbon } from "@/components/RunwayRibbon";
 import {
   VehicleFilterBar,
   applyFilters,
+  getStatusOptions,
   type VehicleFilters,
 } from "@/components/VehicleFilterBar";
 import { VehicleGrid, type SortState } from "@/components/VehicleGrid";
 import { VehicleDetailSheet } from "@/components/VehicleDetailSheet";
 import { useSummary, useVehicles } from "@/lib/hooks";
-import type { AgingTier, VehicleQuery } from "@/lib/types";
+import type { AgingTier, VehicleQuery, VehicleStatus } from "@/lib/types";
 
 const PAGE_SIZE = 10;
 
-/** The single dashboard screen: KPIs + aging spectrum on top, filterable vehicle grid below, detail Sheet on click. */
+// The resting sort when no column is actively chosen: oldest stock first (highest carrying-cost risk on top).
+const DEFAULT_SORT: SortState = { field: "daysInInventory", desc: true };
+
+/** The single dashboard screen: runway-ribbon hero on top, filterable inventory ledger below, detail Sheet on click. */
 export function Dashboard() {
   const [filters, setFilters] = useState<VehicleFilters>({
-    make: "",
-    model: "",
-    tier: undefined,
-    status: undefined,
+    search: "",
+    scope: "Active",
+    tier: [],
+    status: [],
   });
-  const [sort, setSort] = useState<SortState>({ field: "daysInInventory", desc: true });
+  const [sort, setSort] = useState<SortState>(DEFAULT_SORT);
   const [page, setPage] = useState(1);
   const [selectedVehicleId, setSelectedVehicleId] = useState<string | null>(null);
 
@@ -45,55 +48,44 @@ export function Dashboard() {
   }
 
   function updateSort(next: SortState) {
-    setSort(next);
+    // VehicleGrid's header cycles a column desc → asc → (desc again). We turn that repeating flip into a
+    // three-state cycle: the click that would send an asc column back to desc instead clears the sort,
+    // dropping back to the default resting order. Net effect per column: desc → asc → off.
+    const isThirdClick = next.field === sort.field && !sort.desc && next.desc;
+    setSort(isThirdClick ? DEFAULT_SORT : next);
     setPage(1);
   }
 
   function selectTier(tier: AgingTier) {
-    updateFilters({ ...filters, tier });
+    // Ribbon acts like a radio group: clicking a segment focuses that one tier and drops any others.
+    // Clicking the tier that's already the sole selection clears the filter (back to the full fleet).
+    const isSole = filters.tier.length === 1 && filters.tier[0] === tier;
+    updateFilters({ ...filters, tier: isSole ? [] : [tier] });
   }
 
   return (
-    <div className="space-y-6">
-      <section className="space-y-4">
-        <div>
-          <h1 className="text-lg font-semibold">Where is my money stuck?</h1>
-          <p className="text-sm text-muted-foreground">
-            Capital-at-risk overview across held inventory.
-          </p>
+    <div className="space-y-14">
+      {/* 01 — Capital exposure: the runway ribbon hero */}
+      <section>
+        <div className="eyebrow mb-3.5">
+          <span className="idx">01</span> Capital exposure
         </div>
-        <KpiCards summary={summaryQuery.data} isLoading={summaryQuery.isLoading} />
-      </section>
-
-      <section className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-        <AgingSpectrum
+        <RunwayRibbon
           summary={summaryQuery.data}
           isLoading={summaryQuery.isLoading}
           onSelectTier={selectTier}
+          activeTiers={filters.tier}
         />
-        <div className="rounded-lg border bg-card p-5">
-          <h2 className="text-base font-semibold">Reading the spectrum</h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            A vehicle past ~90 days is aged/distressed stock — very likely selling at a loss once
-            floorplan interest, depreciation and holding costs are counted. The spectrum shows
-            problems <em>forming</em> (Watch → Aging) so you can act before Critical.
-          </p>
-          <ul className="mt-3 space-y-1 text-sm text-muted-foreground">
-            <li>• Click a tier to filter the grid below.</li>
-            <li>• Open a vehicle for its carrying cost, AI recommendation and action history.</li>
-            <li>• Log an action and advance it Proposed → Approved → In&nbsp;Progress → Resolved.</li>
-          </ul>
-        </div>
       </section>
 
-      <section className="space-y-4">
-        <div>
-          <h2 className="text-base font-semibold">Inventory</h2>
-          <p className="text-sm text-muted-foreground">
-            Filter, sort and open a vehicle to drill in.
-          </p>
+      {/* 02 — Inventory ledger */}
+      <section>
+        <div className="eyebrow mb-3.5">
+          <span className="idx">02</span> Inventory ledger — {ledgerScopeLabel(filters.scope)}
         </div>
-        <VehicleFilterBar filters={filters} onChange={updateFilters} />
+        <div className="mb-4">
+          <VehicleFilterBar filters={filters} onChange={updateFilters} />
+        </div>
         <VehicleGrid
           data={vehiclesQuery.data}
           isLoading={vehiclesQuery.isLoading}
@@ -102,6 +94,14 @@ export function Dashboard() {
           onSortChange={updateSort}
           onPageChange={setPage}
           onRowClick={(v) => setSelectedVehicleId(v.id)}
+          activeVehicleId={selectedVehicleId}
+          tierFilter={filters.tier}
+          statusFilter={filters.status}
+          statusOptions={getStatusOptions(filters.scope)}
+          onTierFilterChange={(tier) => updateFilters({ ...filters, tier })}
+          onStatusFilterChange={(status: VehicleStatus[]) =>
+            updateFilters({ ...filters, status })
+          }
         />
       </section>
 
@@ -113,4 +113,10 @@ export function Dashboard() {
       />
     </div>
   );
+}
+
+function ledgerScopeLabel(scope: VehicleFilters["scope"]) {
+  if (scope === "Closed") return "closed history";
+  if (scope === "All") return "all vehicles";
+  return "active capital at risk";
 }

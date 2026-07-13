@@ -18,11 +18,13 @@ public class FakeAiClient : IAiClient
     }
 
     public int CallCount { get; private set; }
+    public RecommendationContext? LastContext { get; private set; }
 
     public Task<AiRecommendation?> EnrichAsync(
         RecommendationContext context, RecommendationResult baseline, CancellationToken ct)
     {
         CallCount++;
+        LastContext = context;
         if (_throws)
         {
             throw new InvalidOperationException("Simulated AI provider failure.");

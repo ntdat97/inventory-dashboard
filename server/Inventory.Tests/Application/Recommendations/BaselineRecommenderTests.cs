@@ -67,4 +67,26 @@ public class BaselineRecommenderTests
         result.GroundingFacts.Should().NotBeEmpty();
         result.Rationale.Should().NotBeNullOrWhiteSpace();
     }
+
+    [Fact]
+    public void GroundingFacts_AddCompactDerivedInsight_NotJustRawListFields()
+    {
+        var context = new RecommendationContext(
+            129,
+            AgingTier.Critical,
+            38200m,
+            34000m,
+            3352m,
+            AverageActiveDaysInInventory: 52m,
+            AverageActiveCarryingCostToDate: 1200m);
+
+        var result = Recommender.Recommend(context);
+
+        result.GroundingFacts.Should().Contain(f =>
+            f.Contains("77 days older than the active fleet average") && f.Contains("Critical"));
+        result.GroundingFacts.Should().Contain(f =>
+            f.Contains("$4,200 above cost") && f.Contains("margin needs protection"));
+        result.GroundingFacts.Should().Contain(f =>
+            f.Contains("above the active fleet average") && f.Contains("next 30 days adds about"));
+    }
 }

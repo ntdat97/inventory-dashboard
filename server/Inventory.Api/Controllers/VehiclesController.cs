@@ -15,17 +15,20 @@ public class VehiclesController : ControllerBase
 {
     private readonly InventoryService _inventory;
     private readonly ActionService _actions;
+    private readonly VehicleReservationService _reservations;
     private readonly RecommendationService _recommendations;
     private readonly IValidator<CreateActionRequest> _createActionValidator;
 
     public VehiclesController(
         InventoryService inventory,
         ActionService actions,
+        VehicleReservationService reservations,
         RecommendationService recommendations,
         IValidator<CreateActionRequest> createActionValidator)
     {
         _inventory = inventory;
         _actions = actions;
+        _reservations = reservations;
         _recommendations = recommendations;
         _createActionValidator = createActionValidator;
     }
@@ -63,16 +66,48 @@ public class VehiclesController : ControllerBase
         return result.Status switch
         {
             ServiceStatus.NotFound => Problem(result.Error, statusCode: StatusCodes.Status404NotFound),
+            ServiceStatus.Conflict => Problem(result.Error, statusCode: StatusCodes.Status409Conflict),
             _ => CreatedAtAction(nameof(GetById), new { id }, result.Action),
         };
     }
 
-    /// <summary>AI-assisted (or baseline) action recommendation for the vehicle.</summary>
+    /// <summary>Put an available vehicle on customer hold. Requires authentication (write).</summary>
+    [HttpPost("{id:guid}/reserve")]
+    [Authorize]
+    public async Task<ActionResult<VehicleDetailDto>> Reserve(Guid id, CancellationToken ct)
+    {
+        var result = await _reservations.ReserveAsync(id, ct);
+        return ToVehicleMutationResponse(result);
+    }
+
+    /// <summary>Release a reserved vehicle back to available inventory. Requires authentication (write).</summary>
+    [HttpPost("{id:guid}/release")]
+    [Authorize]
+    public async Task<ActionResult<VehicleDetailDto>> Release(Guid id, CancellationToken ct)
+    {
+        var result = await _reservations.ReleaseAsync(id, ct);
+        return ToVehicleMutationResponse(result);
+    }
+
+    /// <summary>AI-assisted (or baseline) action recommendation for the vehicle. Closed vehicles -> 409 (history only).</summary>
     [HttpGet("{id:guid}/recommendation")]
     [EnableRateLimiting(RateLimitPolicies.VehicleRecommendation)]
     public async Task<ActionResult<RecommendationDto>> GetRecommendation(Guid id, CancellationToken ct)
     {
-        var recommendation = await _recommendations.GetForVehicleAsync(id, ct);
-        return recommendation is null ? NotFound() : Ok(recommendation);
+        var result = await _recommendations.GetForVehicleAsync(id, ct);
+        return result.Status switch
+        {
+            ServiceStatus.NotFound => Problem(result.Error, statusCode: StatusCodes.Status404NotFound),
+            ServiceStatus.Conflict => Problem(result.Error, statusCode: StatusCodes.Status409Conflict),
+            _ => Ok(result.Recommendation),
+        };
     }
+
+    private ActionResult<VehicleDetailDto> ToVehicleMutationResponse(VehicleMutationResultOf result) =>
+        result.Status switch
+        {
+            ServiceStatus.NotFound => Problem(result.Error, statusCode: StatusCodes.Status404NotFound),
+            ServiceStatus.Conflict => Problem(result.Error, statusCode: StatusCodes.Status409Conflict),
+            _ => Ok(result.Vehicle),
+        };
 }

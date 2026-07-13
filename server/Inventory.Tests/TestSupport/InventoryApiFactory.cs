@@ -27,17 +27,15 @@ public class InventoryApiFactory : WebApplicationFactory<Program>
 
     private readonly string _dbName = $"inventory-tests-{Guid.NewGuid():N}";
     private readonly IAiClient _aiClient;
-    private readonly bool _demoAuthEnabled;
 
     /// <summary>Parameterless ctor for <c>IClassFixture</c> usage (default no-op AI fake, demo login enabled).</summary>
     public InventoryApiFactory() : this(null)
     {
     }
 
-    internal InventoryApiFactory(IAiClient? aiClient, bool demoAuthEnabled = true)
+    internal InventoryApiFactory(IAiClient? aiClient)
     {
         _aiClient = aiClient ?? new FakeAiClient();
-        _demoAuthEnabled = demoAuthEnabled;
     }
 
     protected override void ConfigureWebHost(IWebHostBuilder builder)
@@ -50,7 +48,8 @@ public class InventoryApiFactory : WebApplicationFactory<Program>
             config.AddInMemoryCollection(new Dictionary<string, string?>
             {
                 ["Jwt:SigningKey"] = TestSigningKey,
-                ["DemoAuth:Enabled"] = _demoAuthEnabled ? "true" : "false",
+                ["Ai:Enabled"] = "false",
+                ["Ai:Endpoint"] = "",
             });
         });
 

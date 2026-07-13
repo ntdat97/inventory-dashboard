@@ -27,10 +27,19 @@ public class ActionService
 
     public async Task<ActionResultOf> CreateAsync(Guid vehicleId, CreateActionRequest request, CancellationToken ct = default)
     {
-        var vehicleExists = await _db.Vehicles.AnyAsync(v => v.Id == vehicleId, ct);
-        if (!vehicleExists)
+        var vehicle = await _db.Vehicles.AsNoTracking()
+            .FirstOrDefaultAsync(v => v.Id == vehicleId, ct);
+        if (vehicle is null)
         {
             return ActionResultOf.NotFound($"Vehicle {vehicleId} was not found.");
+        }
+
+        // A closed vehicle (sold/transferred/auctioned) has left the risk ledger: its action history is retained for
+        // review but frozen. Logging a new action against it is a conflict, not a silent no-op.
+        if (vehicle.Status.IsClosed())
+        {
+            return ActionResultOf.Conflict(
+                $"Vehicle {vehicleId} is {vehicle.Status} and its action history is read-only.");
         }
 
         var now = _clock.UtcNow;
@@ -54,16 +63,47 @@ public class ActionService
 
     public async Task<ActionResultOf> TransitionAsync(Guid actionId, UpdateActionRequest request, CancellationToken ct = default)
     {
-        var action = await _db.InventoryActions.FirstOrDefaultAsync(a => a.Id == actionId, ct);
+        var action = await _db.InventoryActions
+            .Include(a => a.Vehicle)
+            .FirstOrDefaultAsync(a => a.Id == actionId, ct);
         if (action is null)
         {
             return ActionResultOf.NotFound($"Action {actionId} was not found.");
+        }
+
+        // History on a closed vehicle is frozen — advancing an action on a sold/transferred/auctioned unit is a conflict.
+        if (action.Vehicle is not null && action.Vehicle.Status.IsClosed())
+        {
+            return ActionResultOf.Conflict(
+                $"Vehicle {action.VehicleId} is {action.Vehicle.Status} and its action history is read-only.");
         }
 
         var transition = _workflow.TryTransition(action, request.Status, request.Outcome);
         if (!transition.Success)
         {
             return ActionResultOf.Conflict(transition.Error!);
+        }
+
+        // Starting a price-reduction action is the moment the dealership actually changes the advertised price.
+        // Proposed/Approved are planning states; InProgress means the new listing price must be reflected everywhere.
+        if (action is
+            {
+                Type: ActionType.PriceReduction,
+                Status: ActionStatus.InProgress,
+                ProposedValue: > 0,
+                Vehicle: not null
+            })
+        {
+            action.Vehicle.ListPrice = action.ProposedValue.Value;
+        }
+
+        // Closing a vehicle is a consequence of a deal landing, never a standalone flip: an action that resolves as
+        // Sold takes its owning unit out of active inventory. *Which* exit lane (retail / transfer / auction) is the
+        // action's type; the "did it leave at all?" is the outcome. A NotSold resolution just closes the task and
+        // leaves the unit in stock. The IsClosed() gate above guarantees the vehicle is still active here.
+        if (action is { Status: ActionStatus.Resolved, Outcome: ActionOutcome.Sold, Vehicle: not null })
+        {
+            action.Vehicle.Close(action.Type.SaleDestination(), _clock.UtcNow.Date);
         }
 
         await _db.SaveChangesAsync(ct);

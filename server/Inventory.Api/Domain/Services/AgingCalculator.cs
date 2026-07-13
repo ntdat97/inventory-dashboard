@@ -16,9 +16,15 @@ public class AgingCalculator
         _config = config.Value;
     }
 
-    public AgingResult Calculate(DateTime acquisitionDateUtc)
+    /// <summary>
+    /// Days-in-inventory + tier as of a point in time. <paramref name="asOfUtc"/> freezes the clock for a vehicle that
+    /// has left inventory (its <c>ClosedDate</c>): a closed unit's aging is a historical fact, not a live counter.
+    /// Null (the default) means "still held" and derives against the current clock.
+    /// </summary>
+    public AgingResult Calculate(DateTime acquisitionDateUtc, DateTime? asOfUtc = null)
     {
-        var daysInInventory = (int)(_clock.UtcNow.Date - acquisitionDateUtc.Date).TotalDays;
+        var asOf = (asOfUtc ?? _clock.UtcNow).Date;
+        var daysInInventory = Math.Max(0, (int)(asOf - acquisitionDateUtc.Date).TotalDays);
 
         var tier = daysInInventory switch
         {

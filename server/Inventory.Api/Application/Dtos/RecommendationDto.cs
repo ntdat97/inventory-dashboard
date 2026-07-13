@@ -12,6 +12,7 @@ public enum RecommendationSource
 /// <summary>
 /// An action recommendation for a vehicle. The baseline is always present; when the LLM is reachable and its
 /// output validates, <see cref="Source"/> is <see cref="RecommendationSource.Ai"/> and the rationale is enriched.
+/// MarketRead is optional analyst judgment from the LLM and is intentionally separate from hard grounding facts.
 /// </summary>
 public record RecommendationDto(
     Guid VehicleId,
@@ -19,4 +20,5 @@ public record RecommendationDto(
     decimal? ProposedValue,
     string Rationale,
     RecommendationSource Source,
-    IReadOnlyList<string> GroundingFacts);
+    IReadOnlyList<string> GroundingFacts,
+    string? MarketRead = null);

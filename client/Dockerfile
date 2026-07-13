@@ -15,6 +15,7 @@ RUN npm run build
 
 # --- runtime stage: serve static assets + proxy /api ---
 FROM nginx:1.27-alpine AS runtime
+COPY --from=build /app/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/templates/default.conf.template
 
 # The API upstream is templated from env so the same image works across hosts (Render/Northflank/local compose).

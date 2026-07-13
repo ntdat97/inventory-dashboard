@@ -1,7 +1,7 @@
 import { getToken } from "./token";
 import type {
   CreateActionRequest,
-  DevLoginResponse,
+  GuestLoginResponse,
   InventoryAction,
   InventorySummary,
   PagedResult,
@@ -74,7 +74,11 @@ function safeJson(text: string): unknown {
 function toQueryString(query: VehicleQuery): string {
   const params = new URLSearchParams();
   Object.entries(query).forEach(([key, value]) => {
-    if (value !== undefined && value !== null && value !== "") {
+    if (value === undefined || value === null || value === "") return;
+    // Arrays (tier, status) repeat the key: ?tier=Aging&tier=Critical — matches the API's List binding.
+    if (Array.isArray(value)) {
+      value.forEach((v) => params.append(key, String(v)));
+    } else {
       params.set(key, String(value));
     }
   });
@@ -84,7 +88,7 @@ function toQueryString(query: VehicleQuery): string {
 
 export const api = {
   // Auth
-  devLogin: () => request<DevLoginResponse>("/api/auth/dev-login", { method: "POST" }),
+  guestLogin: () => request<GuestLoginResponse>("/api/auth/guest-login", { method: "POST" }),
   me: () => request<UserProfile>("/api/auth/me"),
 
   // Inventory / vehicles
@@ -100,6 +104,10 @@ export const api = {
     request<PagedResult<VehicleListItem>>(`/api/vehicles${toQueryString(query)}`),
   vehicle: (id: string) => request<VehicleDetail>(`/api/vehicles/${id}`),
   recommendation: (id: string) => request<Recommendation>(`/api/vehicles/${id}/recommendation`),
+  reserveVehicle: (id: string) =>
+    request<VehicleDetail>(`/api/vehicles/${id}/reserve`, { method: "POST" }),
+  releaseVehicle: (id: string) =>
+    request<VehicleDetail>(`/api/vehicles/${id}/release`, { method: "POST" }),
 
   // Actions
   createAction: (vehicleId: string, body: CreateActionRequest) =>

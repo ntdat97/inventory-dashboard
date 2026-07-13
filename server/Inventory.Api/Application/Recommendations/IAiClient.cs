@@ -3,10 +3,10 @@ using Inventory.Api.Domain.Enums;
 namespace Inventory.Api.Application.Recommendations;
 
 /// <summary>
-/// The LLM's parsed, typed enrichment. Kept deliberately small: the AI may refine the recommended action, the
-/// proposed value and the rationale wording, but its output is validated before use and falls back to baseline if invalid.
+/// The LLM's parsed, typed enrichment. The rationale is the grounded action explanation; MarketRead is optional
+/// analyst judgment based on vehicle identity/segment and must not be treated as a hard fact.
 /// </summary>
-public record AiRecommendation(ActionType Action, decimal? ProposedValue, string Rationale);
+public record AiRecommendation(ActionType Action, decimal? ProposedValue, string Rationale, string? MarketRead = null);
 
 /// <summary>
 /// Provider-agnostic seam for the LLM call, wrapped by a resilience handler in the composition root. Isolated so

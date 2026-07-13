@@ -29,6 +29,8 @@ services:
       ConnectionStrings__Default: "Host=postgres;Port=5432;Database=inventory;Username=postgres;Password=postgres"
       # Let the containerised SPA (served by nginx on host 5173) call the API in a full local stack run.
       Cors__AllowedOrigins__0: "http://localhost:5173"
+      # AI enrichment is on by default. If GROQ_API_KEY is missing, the API still serves baseline recommendations.
+      Ai__ApiKey: "${GROQ_API_KEY:-}"
     ports:
       - "8080:8080"
     depends_on:

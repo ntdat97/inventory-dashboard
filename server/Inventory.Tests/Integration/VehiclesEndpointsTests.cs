@@ -20,12 +20,34 @@ public class VehiclesEndpointsTests : IClassFixture<InventoryApiFactory>
         _client.GetFromJsonAsync<PagedResult<VehicleListItemDto>>($"/api/vehicles{query}", JsonDefaults.Options);
 
     [Fact]
-    public async Task List_WithoutFilters_ReturnsAllSeededVehicles()
+    public async Task List_WithoutFilters_ReturnsActiveSeededVehicles()
     {
         var page = await GetPage("?pageSize=100");
 
         page!.TotalCount.Should().Be(12);
         page.Items.Should().HaveCount(12);
+        page.Items.Should().OnlyContain(v =>
+            v.Status == VehicleStatus.InStock || v.Status == VehicleStatus.Reserved);
+    }
+
+    [Fact]
+    public async Task List_AllScope_ReturnsAllSeededVehicles()
+    {
+        var page = await GetPage("?scope=All&pageSize=100");
+
+        page!.TotalCount.Should().Be(22);
+        page.Items.Should().HaveCount(22);
+    }
+
+    [Fact]
+    public async Task List_ClosedScope_ReturnsTraceableNonActiveVehicles()
+    {
+        var page = await GetPage("?scope=Closed&pageSize=100");
+
+        page!.TotalCount.Should().Be(10);
+        page.Items.Should().HaveCount(10);
+        page.Items.Should().OnlyContain(v =>
+            v.Status != VehicleStatus.InStock && v.Status != VehicleStatus.Reserved);
     }
 
     [Fact]
@@ -33,7 +55,7 @@ public class VehiclesEndpointsTests : IClassFixture<InventoryApiFactory>
     {
         var page = await GetPage("?tier=Critical&pageSize=100");
 
-        page!.Items.Should().HaveCount(3);
+        page!.Items.Should().HaveCount(1);
         page.Items.Should().OnlyContain(v => v.Tier == AgingTier.Critical);
     }
 
@@ -64,7 +86,7 @@ public class VehiclesEndpointsTests : IClassFixture<InventoryApiFactory>
     {
         var page = await GetPage("?pageSize=100");
 
-        page!.Items.First().DaysInInventory.Should().Be(210); // the oldest seeded unit
+        page!.Items.First().DaysInInventory.Should().Be(128); // oldest active seeded unit
         page.Items.Should().BeInDescendingOrder(v => v.DaysInInventory);
     }
 
@@ -104,6 +126,8 @@ public class VehiclesEndpointsTests : IClassFixture<InventoryApiFactory>
         var vehicles = await _client.GetFromJsonAsync<List<VehicleListItemDto>>("/api/inventory/aging", JsonDefaults.Options);
 
         vehicles!.Should().OnlyContain(v => v.Tier == AgingTier.Aging || v.Tier == AgingTier.Critical);
-        vehicles.Should().HaveCount(6); // 3 Aging + 3 Critical in the seed
+        vehicles.Should().OnlyContain(v =>
+            v.Status == VehicleStatus.InStock || v.Status == VehicleStatus.Reserved);
+        vehicles.Should().HaveCount(5); // active units in Aging/Critical tiers
     }
 }

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, History, Loader2, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -35,14 +35,27 @@ export function ActionPanel({
   history,
   draft,
   onDraftChange,
+  flashKey = 0,
+  readOnly = false,
 }: {
   vehicleId: string;
   history: InventoryAction[];
   draft: ActionDraft;
   onDraftChange: (draft: ActionDraft) => void;
+  flashKey?: number;
+  readOnly?: boolean;
 }) {
   const createAction = useCreateAction(vehicleId);
   const [error, setError] = useState<string | null>(null);
+  const proposedValueRef = useRef<HTMLInputElement>(null);
+
+  // When the AI recommendation is pulled in, bring the prefilled field into view if it's off-screen.
+  // block: "nearest" is a no-op when it's already visible, so on-screen fields don't jump.
+  useEffect(() => {
+    if (flashKey > 0) {
+      proposedValueRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [flashKey]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -73,17 +86,40 @@ export function ActionPanel({
 
   return (
     <Card>
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-base">
+      <CardHeader className="p-5 pb-3">
+        <CardTitle className="font-display flex items-center gap-2 text-[15px] font-bold tracking-[-0.01em]">
           <History className="h-4 w-4" />
           Actions &amp; history
         </CardTitle>
         <CardDescription>
-          Log a proposed action and advance it through the lifecycle. Every action is retained.
+          {readOnly
+            ? "This vehicle has left inventory — its action history is retained for review, read-only."
+            : "Advance an action through its lifecycle, or log a new one. Every action is retained."}
         </CardDescription>
       </CardHeader>
-      <CardContent className="space-y-5">
-        <form onSubmit={submit} className="space-y-3 rounded-md border p-3">
+      <CardContent className="space-y-5 p-5 pt-0">
+        <div className="space-y-2">
+          {ordered.length === 0 ? (
+            <p className="rounded-md border border-dashed py-6 text-center text-sm text-muted-foreground">
+              No actions logged yet.
+            </p>
+          ) : (
+            ordered.map((action) => (
+              <ActionRow
+                key={action.id}
+                vehicleId={vehicleId}
+                action={action}
+                readOnly={readOnly}
+              />
+            ))
+          )}
+        </div>
+
+        {readOnly ? null : (
+          <form onSubmit={submit} className="space-y-3 rounded-md border p-3">
+          <p className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-muted-foreground">
+            Log a new action
+          </p>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="space-y-1">
               <Label>Action type</Label>
@@ -105,10 +141,17 @@ export function ActionPanel({
             </div>
             <div className="space-y-1">
               <Label htmlFor="proposedValue">Proposed value (optional)</Label>
+              {/* Keyed by flashKey so pulling in the AI recommendation remounts this field and replays the
+                  one-shot .field-flash pulse; flashKey 0 (initial paint) stays quiet. */}
               <Input
+                key={flashKey}
+                ref={proposedValueRef}
                 id="proposedValue"
                 inputMode="decimal"
                 placeholder="e.g. 25900"
+                // scroll-margin gives scrollIntoView a buffer so the field lands clear of the sheet's
+                // bottom edge (and reveals the note + submit below it) instead of flush against it.
+                className={cn("scroll-mb-24", flashKey > 0 && "field-flash")}
                 value={draft.proposedValue}
                 onChange={(e) => onDraftChange({ ...draft, proposedValue: e.target.value })}
               />
@@ -137,29 +180,27 @@ export function ActionPanel({
             Log action
           </Button>
         </form>
-
-        <div className="space-y-2">
-          {ordered.length === 0 ? (
-            <p className="rounded-md border border-dashed py-6 text-center text-sm text-muted-foreground">
-              No actions logged yet.
-            </p>
-          ) : (
-            ordered.map((action) => (
-              <ActionRow key={action.id} vehicleId={vehicleId} action={action} />
-            ))
-          )}
-        </div>
+        )}
       </CardContent>
     </Card>
   );
 }
 
-function ActionRow({ vehicleId, action }: { vehicleId: string; action: InventoryAction }) {
+function ActionRow({
+  vehicleId,
+  action,
+  readOnly = false,
+}: {
+  vehicleId: string;
+  action: InventoryAction;
+  readOnly?: boolean;
+}) {
   const transition = useTransitionAction(vehicleId);
   const [error, setError] = useState<string | null>(null);
   const [outcome, setOutcome] = useState<ActionOutcome>("Sold");
 
-  const target = nextStatus(action.status);
+  // On a closed (frozen) vehicle the history is read-only: never surface an advance control, even mid-lifecycle.
+  const target = readOnly ? null : nextStatus(action.status);
   const needsOutcome = target !== null && requiresOutcome(target);
 
   async function advance() {
@@ -223,11 +264,14 @@ function ActionRow({ vehicleId, action }: { vehicleId: string; action: Inventory
               {advanceLabel(target)}
             </Button>
           </div>
-        ) : (
+        ) : action.status === "Resolved" ? (
           <span className="flex items-center gap-1 text-xs text-tier-fresh">
             <CheckCircle2 className="h-3.5 w-3.5" />
             Resolved
           </span>
+        ) : (
+          // Read-only (frozen) vehicle with an unresolved action: show its status as an archived state, no advance.
+          <span className="text-xs text-muted-foreground">{humanizeEnum(action.status)}</span>
         )}
       </div>
       {error ? (

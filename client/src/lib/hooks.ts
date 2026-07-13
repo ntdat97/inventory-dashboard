@@ -59,6 +59,21 @@ export function useCreateAction(vehicleId: string) {
   });
 }
 
+/** Reserve or release a vehicle, then refresh every dashboard surface that depends on status. */
+export function useVehicleReservation(vehicleId: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (mode: "reserve" | "release") =>
+      mode === "reserve" ? api.reserveVehicle(vehicleId) : api.releaseVehicle(vehicleId),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: keys.vehicle(vehicleId) });
+      qc.invalidateQueries({ queryKey: ["summary"] });
+      qc.invalidateQueries({ queryKey: ["vehicles"] });
+      qc.invalidateQueries({ queryKey: keys.recommendation(vehicleId) });
+    },
+  });
+}
+
 /** Advance an action through its lifecycle; refresh the owning vehicle's history on success. */
 export function useTransitionAction(vehicleId: string) {
   const qc = useQueryClient();
@@ -67,6 +82,9 @@ export function useTransitionAction(vehicleId: string) {
       api.transitionAction(actionId, body),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: keys.vehicle(vehicleId) });
+      qc.invalidateQueries({ queryKey: ["summary"] });
+      qc.invalidateQueries({ queryKey: ["vehicles"] });
+      qc.invalidateQueries({ queryKey: keys.recommendation(vehicleId) });
     },
   });
 }

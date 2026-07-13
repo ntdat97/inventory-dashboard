@@ -9,8 +9,8 @@ using Inventory.Tests.TestSupport;
 namespace Inventory.Tests.Integration;
 
 /// <summary>
-/// Phase 3 auth acceptance: writes are protected (401 without a bearer, 200 with the demo bearer), the guest login
-/// mints a usable token whose profile <c>/auth/me</c> echoes, and the login is disabled when <c>DemoAuth:Enabled=false</c>.
+/// Phase 3 auth acceptance: writes are protected (401 without a bearer, 200 with the demo bearer), and the guest
+/// login mints a usable token whose profile <c>/auth/me</c> echoes.
 /// </summary>
 public class AuthTests
 {
@@ -65,14 +65,14 @@ public class AuthTests
     }
 
     [Fact]
-    public async Task DevLogin_MintsToken_AndMeEchoesProfile()
+    public async Task GuestLogin_MintsToken_AndMeEchoesProfile()
     {
         using var factory = new InventoryApiFactory();
         var client = factory.CreateClient();
 
-        var login = await client.PostAsync("/api/auth/dev-login", content: null);
+        var login = await client.PostAsync("/api/auth/guest-login", content: null);
         login.StatusCode.Should().Be(HttpStatusCode.OK);
-        var body = await login.Content.ReadFromJsonAsync<DevLoginResponse>(JsonDefaults.Options);
+        var body = await login.Content.ReadFromJsonAsync<GuestLoginResponse>(JsonDefaults.Options);
         body!.AccessToken.Should().NotBeNullOrEmpty();
         body.TokenType.Should().Be("Bearer");
         body.User.Role.Should().Be("InventoryManager");
@@ -96,14 +96,4 @@ public class AuthTests
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
     }
 
-    [Fact]
-    public async Task DevLogin_WhenDemoAuthDisabled_IsNotAvailable()
-    {
-        using var factory = new InventoryApiFactory(aiClient: null, demoAuthEnabled: false);
-        var client = factory.CreateClient();
-
-        var response = await client.PostAsync("/api/auth/dev-login", content: null);
-
-        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-    }
 }

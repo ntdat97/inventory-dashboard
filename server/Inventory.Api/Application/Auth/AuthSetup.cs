@@ -20,7 +20,7 @@ public static class AuthSetup
 
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentUserService, CurrentUserService>();
-        services.AddScoped<DevTokenIssuer>();
+        services.AddScoped<GuestTokenIssuer>();
 
         services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer();
 

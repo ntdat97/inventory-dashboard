@@ -16,21 +16,45 @@ interface AuthState {
 
 const AuthContext = createContext<AuthState | undefined>(undefined);
 
+// Per-tab flag set on explicit logout. It keeps the auto-login below from immediately signing us back in, so
+// "Logout" actually lands you on the login screen (where SSO can be exercised). A fresh tab has no flag and
+// auto-logs-in again — logout is a within-session choice, not a persisted one.
+const LOGGED_OUT_KEY = "inventory.loggedOut";
+const wasLoggedOut = () => sessionStorage.getItem(LOGGED_OUT_KEY) === "1";
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<UserProfile | null>(null);
-  // Start in "loading" only if a token is already present — otherwise the app renders the login screen immediately.
-  const [isLoading, setIsLoading] = useState<boolean>(() => getToken() !== null);
+  // We open in "loading" whenever there's boot work to do: an existing token to rehydrate, or an auto-login to run.
+  // The only case that renders immediately is a deliberate logout within this tab.
+  const [isLoading, setIsLoading] = useState<boolean>(() => !wasLoggedOut());
 
-  // Rehydrate the session on mount: if a stored bearer is still valid, /auth/me returns the profile; a 401 means it
-  // expired, so we clear it and fall back to the login screen.
+  const loginAsGuest = useCallback(async () => {
+    const response = await api.guestLogin();
+    setToken(response.accessToken);
+    sessionStorage.removeItem(LOGGED_OUT_KEY);
+    setUser(response.user);
+  }, []);
+
+  // Boot: rehydrate a stored bearer if present, otherwise auto-login as the demo guest so the app opens straight on
+  // the dashboard. A prior logout in this tab short-circuits both paths and drops us on the login screen.
   useEffect(() => {
-    if (getToken() === null) return;
+    if (wasLoggedOut()) return;
     let cancelled = false;
     (async () => {
       try {
-        const profile = await api.me();
-        if (!cancelled) setUser(profile);
+        if (getToken() !== null) {
+          // Stored bearer: valid → profile; 401/expired → clear and fall through to a fresh guest login.
+          try {
+            const profile = await api.me();
+            if (!cancelled) setUser(profile);
+            return;
+          } catch {
+            clearToken();
+          }
+        }
+        await loginAsGuest();
       } catch {
+        // Auto-login failed (API down / SSO-only deployment): clear state and let the login screen take over.
         clearToken();
         if (!cancelled) setUser(null);
       } finally {
@@ -40,13 +64,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
-
-  const loginAsGuest = useCallback(async () => {
-    const response = await api.devLogin();
-    setToken(response.accessToken);
-    setUser(response.user);
-  }, []);
+  }, [loginAsGuest]);
 
   const loginWithMicrosoft = useCallback(async () => {
     // The real SSO path is a server-driven OIDC challenge. On the zero-setup demo Entra is not configured, so
@@ -71,6 +89,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const logout = useCallback(() => {
     clearToken();
+    // Mark this tab as intentionally signed out so boot doesn't auto-login us back in — the login screen stays put
+    // until the user picks a sign-in method (or opens a fresh tab).
+    sessionStorage.setItem(LOGGED_OUT_KEY, "1");
     setUser(null);
   }, []);
 
