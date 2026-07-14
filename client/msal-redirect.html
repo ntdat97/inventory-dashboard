@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Signing in…</title>
+  </head>
+  <body>
+    <!--
+      MSAL popup redirect landing page. It loads ONLY the tiny bridge script below — not the React app — so the
+      router can't strip the auth response from the URL before MSAL reads it. The script broadcasts the response
+      back to the opener window and closes this popup. See src/msal-redirect.ts.
+    -->
+    <script type="module" src="/src/msal-redirect.ts"></script>
+  </body>
+</html>

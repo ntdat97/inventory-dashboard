@@ -56,6 +56,24 @@ public static class AuthSetup
                     ValidAudiences = BuildValidAudiences(jwt, azureAd),
                     IssuerSigningKeys = BuildLocalSigningKeys(jwt),
                 };
+
+                // Surface *why* a bearer was rejected. Without this, every validation failure (audience/issuer
+                // mismatch, expiry, wrong signing key) collapses to an opaque 401 with no server-side breadcrumb —
+                // which is exactly what makes the Entra v1/v2 token mismatch hard to diagnose.
+                bearer.Events = new JwtBearerEvents
+                {
+                    OnAuthenticationFailed = context =>
+                    {
+                        var logger = context.HttpContext.RequestServices
+                            .GetRequiredService<ILoggerFactory>()
+                            .CreateLogger("Inventory.Auth.JwtBearer");
+                        logger.LogWarning(
+                            context.Exception,
+                            "JWT bearer authentication failed: {Message}",
+                            context.Exception.Message);
+                        return Task.CompletedTask;
+                    },
+                };
             });
 
         services.AddAuthorization();
@@ -67,7 +85,13 @@ public static class AuthSetup
         var issuers = new List<string> { jwt.Issuer };
         if (azureAd.IsConfigured)
         {
+            // Accept BOTH Entra token versions. Which one the tenant issues for our exposed API
+            // (api://{clientId}/access_as_user) depends on the app registration's accessTokenAcceptedVersion:
+            //   • v2 (accessTokenAcceptedVersion = 2) → iss = https://login.microsoftonline.com/{tenant}/v2.0
+            //   • v1 (the default, null/1)          → iss = https://sts.windows.net/{tenant}/
+            // Validating both means SSO works regardless of that manifest setting.
             issuers.Add($"https://login.microsoftonline.com/{azureAd.TenantId}/v2.0");
+            issuers.Add($"https://sts.windows.net/{azureAd.TenantId}/");
         }
 
         return issuers;
@@ -78,7 +102,10 @@ public static class AuthSetup
         var audiences = new List<string> { jwt.Audience };
         if (azureAd.IsConfigured && !string.IsNullOrWhiteSpace(azureAd.ClientId))
         {
+            // v2 access tokens carry the bare client-id GUID as the audience; v1 access tokens for a custom API
+            // carry the App ID URI (api://{clientId}). Accept both so either token version validates.
             audiences.Add(azureAd.ClientId);
+            audiences.Add($"api://{azureAd.ClientId}");
         }
 
         return audiences;

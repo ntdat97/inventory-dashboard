@@ -11,6 +11,14 @@ COPY . .
 # API lives on a different origin: `--build-arg VITE_API_BASE_URL=https://api.example.com`.
 ARG VITE_API_BASE_URL=""
 ENV VITE_API_BASE_URL=$VITE_API_BASE_URL
+
+# Entra ID (Azure AD) SSO — build args, not runtime env (Vite inlines VITE_* at build time). Leave empty to keep SSO
+# disabled (the login screen falls back to a friendly message and the guest path stays fully usable).
+ARG VITE_AZURE_AD_TENANT_ID=""
+ARG VITE_AZURE_AD_CLIENT_ID=""
+ENV VITE_AZURE_AD_TENANT_ID=$VITE_AZURE_AD_TENANT_ID
+ENV VITE_AZURE_AD_CLIENT_ID=$VITE_AZURE_AD_CLIENT_ID
+
 RUN npm run build
 
 # --- runtime stage: serve static assets + proxy /api ---

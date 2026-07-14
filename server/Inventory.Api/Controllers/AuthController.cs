@@ -1,8 +1,10 @@
 using Inventory.Api.Application.Auth;
 using Inventory.Api.Application.Dtos;
+using Inventory.Api.Infrastructure;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
 namespace Inventory.Api.Controllers;
@@ -19,6 +21,7 @@ public class AuthController : ControllerBase
     private readonly AzureAdOptions _azureAd;
     private readonly GuestTokenIssuer _tokenIssuer;
     private readonly ICurrentUserService _currentUser;
+    private readonly AppDbContext _db;
     private readonly ILogger<AuthController> _logger;
 
     public AuthController(
@@ -26,12 +29,14 @@ public class AuthController : ControllerBase
         IOptions<AzureAdOptions> azureAd,
         GuestTokenIssuer tokenIssuer,
         ICurrentUserService currentUser,
+        AppDbContext db,
         ILogger<AuthController> logger)
     {
         _demo = demo.Value;
         _azureAd = azureAd.Value;
         _tokenIssuer = tokenIssuer;
         _currentUser = currentUser;
+        _db = db;
         _logger = logger;
     }
 
@@ -66,6 +71,37 @@ public class AuthController : ControllerBase
         _logger.LogInformation("Guest demo login issued for {Email}.", _demo.Email);
 
         var profile = new UserProfileDto(_demo.Email, _demo.Email, _demo.Name, _demo.Role, _demo.DealershipId);
+        return Ok(new GuestLoginResponse(issued.AccessToken, "Bearer", issued.ExpiresAtUtc, profile));
+    }
+
+    /// <summary>
+    /// Scoped demo login → same as guest-login but the token is tied to the first dealership in the DB.
+    /// Lets reviewers demo the dealership-scoping feature without needing a real dealership ID.
+    /// </summary>
+    [HttpPost("scoped-login")]
+    [AllowAnonymous]
+    public async Task<ActionResult<GuestLoginResponse>> ScopedLogin(CancellationToken ct)
+    {
+        var dealership = await _db.Dealerships.AsNoTracking().OrderBy(d => d.Name).FirstOrDefaultAsync(ct);
+        if (dealership is null)
+        {
+            return Problem("No dealerships found in the database.", statusCode: StatusCodes.Status503ServiceUnavailable);
+        }
+
+        var scopedDemo = new DemoAuthOptions
+        {
+            Email = "downtown.manager@datnguyen-demo.com",
+            Name = "Downtown Manager",
+            Role = "DealershipManager",
+            DealershipId = dealership.Id.ToString(),
+        };
+
+        var issued = _tokenIssuer.IssueForDemoUser(scopedDemo);
+        _logger.LogInformation(
+            "Scoped demo login issued for {Email}, scoped to dealership {DealershipId} ({DealershipName}).",
+            scopedDemo.Email, dealership.Id, dealership.Name);
+
+        var profile = new UserProfileDto(scopedDemo.Email, scopedDemo.Email, scopedDemo.Name, scopedDemo.Role, dealership.Id.ToString());
         return Ok(new GuestLoginResponse(issued.AccessToken, "Bearer", issued.ExpiresAtUtc, profile));
     }
 

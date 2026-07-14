@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Loader2, Lock, RotateCcw, ShieldCheck } from "lucide-react";
 import {
   Sheet,
@@ -29,10 +29,21 @@ export function VehicleDetailSheet({
   onOpenChange: (open: boolean) => void;
 }) {
   const { data, isLoading } = useVehicle(vehicleId);
+  const contentRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    contentRef.current?.scrollTo({ top: 0 });
+  }, [vehicleId]);
 
   return (
     <Sheet open={vehicleId !== null} onOpenChange={onOpenChange}>
-      <SheetContent>
+      <SheetContent
+        ref={contentRef}
+        onOpenAutoFocus={(event) => {
+          event.preventDefault();
+          contentRef.current?.focus();
+        }}
+      >
         {isLoading || !data ? (
           <div className="flex h-full items-center justify-center">
             <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
@@ -111,19 +122,19 @@ function DetailBody({ data }: { data: VehicleDetail }) {
       </SheetHeader>
 
       {/* Stat readout — bordered gauge cells, mono figures */}
-      <div className="grid grid-cols-2 overflow-hidden rounded-lg border sm:grid-cols-4">
+      <div className="grid min-h-[92px] grid-cols-2 overflow-hidden rounded-lg border sm:grid-cols-4">
         {figures.map((f, i) => (
           <div
             key={f.label}
-            className={`border-b border-r px-5 py-3 last:border-r-0 sm:border-b-0 ${
+            className={`grid min-h-[92px] grid-rows-[24px_1fr] border-b border-r px-5 py-3 last:border-r-0 sm:border-b-0 ${
               i % 2 === 1 ? "border-r-0 sm:border-r" : ""
             }`}
           >
-            <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-[0.07em] text-muted-foreground">
+            <p className="text-[10px] font-semibold uppercase leading-[1.2] tracking-[0.07em] text-muted-foreground">
               {f.label}
             </p>
             <p
-              className={`mono text-[20px] font-semibold tracking-[-0.02em] ${
+              className={`mono self-end text-[20px] font-semibold leading-none tracking-[-0.02em] ${
                 f.accent === "crit"
                   ? "text-tier-critical"
                   : f.accent === "warn"

@@ -2,6 +2,8 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { api, ApiError } from "@/lib/api";
 import { clearToken, getToken, setToken } from "@/lib/token";
 import type { UserProfile } from "@/lib/types";
+import { apiScope, getMsal, isMsalConfigured } from "@/auth/msal";
+import { queryClient } from "@/lib/queryClient";
 
 interface AuthState {
   user: UserProfile | null;
@@ -9,6 +11,8 @@ interface AuthState {
   isLoading: boolean;
   /** Guest/demo login → mints + stores the bearer, then loads the profile. */
   loginAsGuest: () => Promise<void>;
+  /** Scoped demo login → same as guest but JWT is tied to a specific dealership. */
+  loginAsScoped: () => Promise<void>;
   /** Real SSO entry point; degrades gracefully when Entra is not wired on this deployment. */
   loginWithMicrosoft: () => Promise<void>;
   logout: () => void;
@@ -29,7 +33,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [isLoading, setIsLoading] = useState<boolean>(() => !wasLoggedOut());
 
   const loginAsGuest = useCallback(async () => {
+    queryClient.clear(); // purge stale data from any previous session before loading new scoped data
     const response = await api.guestLogin();
+    setToken(response.accessToken);
+    sessionStorage.removeItem(LOGGED_OUT_KEY);
+    setUser(response.user);
+  }, []);
+
+  const loginAsScoped = useCallback(async () => {
+    queryClient.clear(); // purge stale data from any previous session before loading new scoped data
+    const response = await api.scopedLogin();
     setToken(response.accessToken);
     sessionStorage.removeItem(LOGGED_OUT_KEY);
     setUser(response.user);
@@ -67,23 +80,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [loginAsGuest]);
 
   const loginWithMicrosoft = useCallback(async () => {
-    // The real SSO path is a server-driven OIDC challenge. On the zero-setup demo Entra is not configured, so
-    // /auth/login answers 404 — probe it first so we can show a clear, non-fatal message instead of navigating the
-    // browser to a raw 404 ProblemDetails page. A configured tenant answers with a redirect, which we then follow.
-    const base = (import.meta.env.VITE_API_BASE_URL ?? "").replace(/\/$/, "");
-    const loginUrl = `${base}/api/auth/login?returnUrl=${encodeURIComponent(window.location.origin)}`;
+    // Real SSO via MSAL SPA popup (single App-registration pattern). If Entra isn't configured on this build we
+    // surface the same friendly message the login screen already handles — the guest path remains fully usable.
+    if (!isMsalConfigured) {
+      throw new ApiError(
+        404,
+        "Microsoft SSO isn't configured on this deployment. Use “Continue as guest”.",
+      );
+    }
+
+    const msal = await getMsal();
+    if (!msal) {
+      throw new ApiError(0, "Couldn't initialise Microsoft sign-in. Use “Continue as guest”.");
+    }
+
     try {
-      const res = await fetch(loginUrl, { redirect: "manual" });
-      if (res.status === 404) {
-        throw new ApiError(
-          404,
-          "Microsoft SSO isn't configured on this demo deployment. Use “Continue as guest”.",
-        );
+      try {
+        // Defensive: MSAL leaves an "interaction.status" lock in sessionStorage if a previous popup didn't close
+        // cleanly (React StrictMode double-mount, HMR, user closing the popup window). A stale lock makes the next
+        // loginPopup throw `interaction_in_progress` before any network call. Clearing the flag lets the retry proceed.
+        for (const key of Object.keys(sessionStorage)) {
+          if (key.startsWith("msal.") && key.endsWith(".interaction.status")) {
+            sessionStorage.removeItem(key);
+          }
+        }
+      } catch {
+        // sessionStorage inaccessible (private mode, sandboxed iframe) — loginPopup will surface its own error.
       }
-      window.location.href = loginUrl;
+      const result = await msal.loginPopup({ scopes: [apiScope] });
+      if (!result.accessToken) {
+        throw new ApiError(0, "Microsoft sign-in returned no access token. Use “Continue as guest”.");
+      }
+      setToken(result.accessToken);
+      sessionStorage.removeItem(LOGGED_OUT_KEY);
+      // The backend's /auth/me reads the bearer's claims — same shape as the guest path, so downstream code is uniform.
+      const profile = await api.me();
+      setUser(profile);
     } catch (err) {
       if (err instanceof ApiError) throw err;
-      throw new ApiError(0, "Couldn't reach the sign-in endpoint. Use “Continue as guest”.");
+      // MSAL surfaces its own error shapes (BrowserAuthError, InteractionRequiredAuthError). Map the user-cancel case
+      // to a quiet no-op; everything else becomes a friendly message on the login screen.
+      const name = (err as { errorCode?: string; name?: string })?.errorCode
+        ?? (err as { name?: string })?.name
+        ?? "";
+      if (name === "user_cancelled" || name === "popup_window_error") {
+        return;
+      }
+      console.error("[MSAL] loginPopup failed:", err);
+      throw new ApiError(0, "Microsoft sign-in failed. Use “Continue as guest”.");
     }
   }, []);
 
@@ -101,10 +145,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isAuthenticated: user !== null,
       isLoading,
       loginAsGuest,
+      loginAsScoped,
       loginWithMicrosoft,
       logout,
     }),
-    [user, isLoading, loginAsGuest, loginWithMicrosoft, logout],
+    [user, isLoading, loginAsGuest, loginAsScoped, loginWithMicrosoft, logout],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

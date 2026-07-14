@@ -30,7 +30,9 @@ export function Header() {
 
         <div className="flex items-center gap-5">
           <div className="hidden text-right leading-tight sm:block">
-            <p className="text-[13px] font-semibold">Northgate Auto Group</p>
+            <p className="text-[13px] font-semibold">
+              {user?.dealershipId ? "DatNguyen Motors - Downtown" : "Northgate Auto Group"}
+            </p>
             <p className="mono text-[11.5px] text-muted-foreground">
               {displayName}
               {user?.role ? ` — ${user.role}` : ""}

@@ -15,18 +15,23 @@ public class InventoryController : ControllerBase
         _inventory = inventory;
     }
 
-    /// <summary>Capital-at-risk KPI payload for the dashboard.</summary>
+    /// <summary>
+    /// Capital-at-risk KPI payload for the dashboard.
+    /// Dealership scope is resolved automatically from the caller's JWT claim — no override via query param.
+    /// </summary>
     [HttpGet("summary")]
-    public async Task<ActionResult<InventorySummaryDto>> Summary([FromQuery] Guid? dealershipId, CancellationToken ct)
+    public async Task<ActionResult<InventorySummaryDto>> Summary(CancellationToken ct)
     {
-        return Ok(await _inventory.GetSummaryAsync(dealershipId, ct));
+        return Ok(await _inventory.GetSummaryAsync(ct));
     }
 
-    /// <summary>Aging/Critical subset — convenience view for the aging spectrum.</summary>
+    /// <summary>
+    /// Aging/Critical subset — convenience view for the aging spectrum.
+    /// Dealership scope is resolved automatically from the caller's JWT claim — no override via query param.
+    /// </summary>
     [HttpGet("aging")]
-    public async Task<ActionResult<IReadOnlyList<VehicleListItemDto>>> Aging(
-        [FromQuery] Guid? dealershipId, CancellationToken ct)
+    public async Task<ActionResult<IReadOnlyList<VehicleListItemDto>>> Aging(CancellationToken ct)
     {
-        return Ok(await _inventory.GetAgingAsync(dealershipId, ct));
+        return Ok(await _inventory.GetAgingAsync(ct));
     }
 }

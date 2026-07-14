@@ -89,6 +89,7 @@ function toQueryString(query: VehicleQuery): string {
 export const api = {
   // Auth
   guestLogin: () => request<GuestLoginResponse>("/api/auth/guest-login", { method: "POST" }),
+  scopedLogin: () => request<GuestLoginResponse>("/api/auth/scoped-login", { method: "POST" }),
   me: () => request<UserProfile>("/api/auth/me"),
 
   // Inventory / vehicles

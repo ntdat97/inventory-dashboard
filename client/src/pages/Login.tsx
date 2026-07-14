@@ -7,11 +7,11 @@ import { ApiError } from "@/lib/api";
 
 /** The /login page — full-screen sign-in. Two paths mirror the backend: real Entra SSO and the flag-gated guest demo. */
 export function Login() {
-  const { loginAsGuest, loginWithMicrosoft } = useAuth();
-  const [busy, setBusy] = useState<"guest" | "microsoft" | null>(null);
+  const { loginAsGuest, loginAsScoped, loginWithMicrosoft } = useAuth();
+  const [busy, setBusy] = useState<"guest" | "scoped" | "microsoft" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  async function run(kind: "guest" | "microsoft", fn: () => Promise<void>) {
+  async function run(kind: "guest" | "scoped" | "microsoft", fn: () => Promise<void>) {
     setBusy(kind);
     setError(null);
     try {
@@ -64,7 +64,19 @@ export function Login() {
             onClick={() => run("guest", loginAsGuest)}
           >
             {busy === "guest" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            Continue as guest (demo)
+            Continue as manager account
+          </Button>
+
+          {/* Scoped demo — same as guest but the JWT is tied to a specific dealership so the
+               dealership-scoping feature can be exercised without needing a real user account. */}
+          <Button
+            className="w-full"
+            variant="outline"
+            disabled={busy !== null}
+            onClick={() => run("scoped", loginAsScoped)}
+          >
+            {busy === "scoped" ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            Continue as scoped manager
           </Button>
 
           {error ? (

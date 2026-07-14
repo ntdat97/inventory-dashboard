@@ -1,3 +1,4 @@
+using Inventory.Api.Application.Auth;
 using Inventory.Api.Application.Dtos;
 using Inventory.Api.Domain.Configuration;
 using Inventory.Api.Domain.Entities;
@@ -27,28 +28,43 @@ public class InventoryService
     private readonly CarryingCostCalculator _carryingCost;
     private readonly AgingConfig _agingConfig;
     private readonly AppMetrics _metrics;
+    private readonly ICurrentUserService _currentUser;
 
     public InventoryService(
         AppDbContext db,
         AgingCalculator aging,
         CarryingCostCalculator carryingCost,
         IOptions<AgingConfig> agingConfig,
-        AppMetrics metrics)
+        AppMetrics metrics,
+        ICurrentUserService currentUser)
     {
         _db = db;
         _aging = aging;
         _carryingCost = carryingCost;
         _agingConfig = agingConfig.Value;
         _metrics = metrics;
+        _currentUser = currentUser;
     }
+
+    /// <summary>
+    /// Resolves the dealership scope from the current user's JWT claim.
+    /// When the claim is present the user sees only their dealership's vehicles.
+    /// When absent (platform admin / unconfigured demo token) no restriction is applied.
+    /// </summary>
+    private Guid? ScopedDealershipId =>
+        _currentUser.DealershipId is { } s && Guid.TryParse(s, out var id) ? id : null;
 
     public async Task<PagedResult<VehicleListItemDto>> ListAsync(VehicleQuery query, CancellationToken ct = default)
     {
         var page = Math.Max(1, query.Page);
         var pageSize = Math.Clamp(query.PageSize, 1, MaxPageSize);
 
+        // Enforce dealership scope from the token — the caller cannot override this.
+        // If the token carries a dealershipId it always wins; otherwise fall back to the query param (platform admin).
+        var effectiveDealershipId = ScopedDealershipId ?? query.DealershipId;
+
         // DB-side filters on persisted columns; derived filters (tier, days) applied after in-memory derivation.
-        var vehicles = await FilteredByColumns(query).AsNoTracking().ToListAsync(ct);
+        var vehicles = await FilteredByColumns(query, effectiveDealershipId).AsNoTracking().ToListAsync(ct);
 
         var items = vehicles
             .Select(ToListItem)
@@ -66,11 +82,15 @@ public class InventoryService
 
     public async Task<VehicleDetailDto?> GetByIdAsync(Guid id, CancellationToken ct = default)
     {
+        var scopedDealershipId = ScopedDealershipId;
         var vehicle = await _db.Vehicles
             .AsNoTracking()
             .Include(v => v.Dealership)
             .Include(v => v.Actions)
-            .FirstOrDefaultAsync(v => v.Id == id, ct);
+            // When the user is scoped to a dealership, treat cross-dealership access as not-found
+            // (404 rather than 403 — avoids leaking that the vehicle ID exists).
+            .FirstOrDefaultAsync(v => v.Id == id
+                && (scopedDealershipId == null || v.DealershipId == scopedDealershipId), ct);
 
         if (vehicle is null)
         {
@@ -80,8 +100,9 @@ public class InventoryService
         return DtoMapper.ToVehicleDetailDto(vehicle, _aging, _carryingCost);
     }
 
-    public async Task<InventorySummaryDto> GetSummaryAsync(Guid? dealershipId, CancellationToken ct = default)
+    public async Task<InventorySummaryDto> GetSummaryAsync(CancellationToken ct = default)
     {
+        var dealershipId = ScopedDealershipId;
         var query = _db.Vehicles.AsNoTracking().AsQueryable();
         if (dealershipId is not null)
         {
@@ -115,8 +136,9 @@ public class InventoryService
     }
 
     /// <summary>Aging/Critical subset — a convenience view over the list filter for the dashboard's aging spectrum.</summary>
-    public async Task<IReadOnlyList<VehicleListItemDto>> GetAgingAsync(Guid? dealershipId, CancellationToken ct = default)
+    public async Task<IReadOnlyList<VehicleListItemDto>> GetAgingAsync(CancellationToken ct = default)
     {
+        var dealershipId = ScopedDealershipId;
         var query = _db.Vehicles.AsNoTracking().AsQueryable();
         if (dealershipId is not null)
         {
@@ -132,13 +154,15 @@ public class InventoryService
             .ToList();
     }
 
-    private IQueryable<Vehicle> FilteredByColumns(VehicleQuery query)
+    private IQueryable<Vehicle> FilteredByColumns(VehicleQuery query, Guid? dealershipId = null)
     {
         var q = _db.Vehicles.AsQueryable();
 
-        if (query.DealershipId is not null)
+        // dealershipId arg wins over query.DealershipId (it carries the token-enforced scope).
+        var effectiveDealershipId = dealershipId ?? query.DealershipId;
+        if (effectiveDealershipId is not null)
         {
-            q = q.Where(v => v.DealershipId == query.DealershipId);
+            q = q.Where(v => v.DealershipId == effectiveDealershipId);
         }
 
         if (!string.IsNullOrWhiteSpace(query.Search))

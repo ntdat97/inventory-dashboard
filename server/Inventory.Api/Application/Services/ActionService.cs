@@ -1,3 +1,4 @@
+using Inventory.Api.Application.Auth;
 using Inventory.Api.Application.Dtos;
 using Inventory.Api.Domain.Entities;
 using Inventory.Api.Domain.Enums;
@@ -17,19 +18,32 @@ public class ActionService
     private readonly AppDbContext _db;
     private readonly ActionWorkflow _workflow;
     private readonly IClock _clock;
+    private readonly ICurrentUserService _currentUser;
 
-    public ActionService(AppDbContext db, ActionWorkflow workflow, IClock clock)
+    public ActionService(AppDbContext db, ActionWorkflow workflow, IClock clock, ICurrentUserService currentUser)
     {
         _db = db;
         _workflow = workflow;
         _clock = clock;
+        _currentUser = currentUser;
     }
+
+    private Guid? ScopedDealershipId =>
+        _currentUser.DealershipId is { } s && Guid.TryParse(s, out var id) ? id : null;
 
     public async Task<ActionResultOf> CreateAsync(Guid vehicleId, CreateActionRequest request, CancellationToken ct = default)
     {
         var vehicle = await _db.Vehicles.AsNoTracking()
             .FirstOrDefaultAsync(v => v.Id == vehicleId, ct);
         if (vehicle is null)
+        {
+            return ActionResultOf.NotFound($"Vehicle {vehicleId} was not found.");
+        }
+
+        // Enforce dealership scope: a manager can only act on their own dealership's vehicles.
+        // Users without a dealership claim (platform admin) bypass this check.
+        var scopedDealershipId = ScopedDealershipId;
+        if (scopedDealershipId is not null && vehicle.DealershipId != scopedDealershipId)
         {
             return ActionResultOf.NotFound($"Vehicle {vehicleId} was not found.");
         }
@@ -67,6 +81,15 @@ public class ActionService
             .Include(a => a.Vehicle)
             .FirstOrDefaultAsync(a => a.Id == actionId, ct);
         if (action is null)
+        {
+            return ActionResultOf.NotFound($"Action {actionId} was not found.");
+        }
+
+        // Enforce dealership scope on the owning vehicle, same rule as CreateAsync.
+        var scopedDealershipId = ScopedDealershipId;
+        if (scopedDealershipId is not null
+            && action.Vehicle is not null
+            && action.Vehicle.DealershipId != scopedDealershipId)
         {
             return ActionResultOf.NotFound($"Action {actionId} was not found.");
         }

@@ -1,3 +1,4 @@
+using Inventory.Api.Application.Auth;
 using Inventory.Api.Application.Dtos;
 using Inventory.Api.Domain.Entities;
 using Inventory.Api.Domain.Services;
@@ -11,16 +12,22 @@ public class VehicleReservationService
     private readonly AppDbContext _db;
     private readonly AgingCalculator _aging;
     private readonly CarryingCostCalculator _carryingCost;
+    private readonly ICurrentUserService _currentUser;
 
     public VehicleReservationService(
         AppDbContext db,
         AgingCalculator aging,
-        CarryingCostCalculator carryingCost)
+        CarryingCostCalculator carryingCost,
+        ICurrentUserService currentUser)
     {
         _db = db;
         _aging = aging;
         _carryingCost = carryingCost;
+        _currentUser = currentUser;
     }
+
+    private Guid? ScopedDealershipId =>
+        _currentUser.DealershipId is { } s && Guid.TryParse(s, out var id) ? id : null;
 
     public Task<VehicleMutationResultOf> ReserveAsync(Guid vehicleId, CancellationToken ct = default) =>
         ChangeStatusAsync(
@@ -48,6 +55,13 @@ public class VehicleReservationService
             .FirstOrDefaultAsync(v => v.Id == vehicleId, ct);
 
         if (vehicle is null)
+        {
+            return VehicleMutationResultOf.NotFound($"Vehicle {vehicleId} was not found.");
+        }
+
+        // Enforce dealership scope: a manager can only reserve/release their own dealership's vehicles.
+        var scopedDealershipId = ScopedDealershipId;
+        if (scopedDealershipId is not null && vehicle.DealershipId != scopedDealershipId)
         {
             return VehicleMutationResultOf.NotFound($"Vehicle {vehicleId} was not found.");
         }
